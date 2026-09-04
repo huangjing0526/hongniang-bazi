@@ -88,6 +88,16 @@ const state = {
 // 1. 初始化与城市数据加载
 // ============================================================================
 
+// 城市库 253KB（gzip 53KB），只有老师查出生地和批量解析时才用得上，
+// 所以不挡首盘。需要它的地方通过 whenCityDataReady() 等一下即可。
+let cityDataPromise = null;
+
+/** 启动加载（幂等），返回可等待的 promise */
+function whenCityDataReady() {
+  if (!cityDataPromise) cityDataPromise = initCityData();
+  return cityDataPromise;
+}
+
 /** 尝试导入或异步加载城市库，支持优雅降级 */
 async function initCityData() {
   try {
@@ -1080,9 +1090,20 @@ export function onCitySearchInput(query) {
   const listEl = document.getElementById('city-search-results');
   if (!listEl) return;
 
-  if (!query || !query.trim() || !state.lookupCityFn) {
+  if (!query || !query.trim()) {
     listEl.style.display = 'none';
     listEl.innerHTML = '';
+    return;
+  }
+
+  // 城市库还在路上：给个说法，别让下拉空着像是没匹配到
+  if (!state.lookupCityFn) {
+    listEl.style.display = 'block';
+    listEl.innerHTML = '<div class="city-opt-item empty">城市库加载中…</div>';
+    whenCityDataReady().then(() => {
+      const inputEl = document.getElementById('city-search-input');
+      if (inputEl && inputEl.value.trim()) onCitySearchInput(inputEl.value);
+    });
     return;
   }
 
@@ -1158,7 +1179,7 @@ export function selectCity(name, lng) {
 }
 
 /** 批量解析文本 */
-export function applyBatchInput() {
+export async function applyBatchInput() {
   const textEl = document.getElementById('batch-textarea');
   if (!textEl) return;
 
@@ -1166,6 +1187,13 @@ export function applyBatchInput() {
   if (!text) {
     showToast('请在文本框中粘贴命例数据');
     return;
+  }
+
+  // 必须等城市库：没有它，出生地会被当成未知、经度按东经 120 度算，
+  // 兰州这类西部盘会直接错一个时辰——正是本工具要抓的那类错误，不能自己制造。
+  if (!state.lookupCityFn) {
+    showToast('城市库加载中，稍候…');
+    await whenCityDataReady();
   }
 
   const cases = parseBatchCases(text);
@@ -1240,7 +1268,7 @@ export function clearBatchCases() {
 }
 
 /** 载入典型测试样盘库 */
-export function loadSampleCases() {
+export async function loadSampleCases() {
   const samples = [
     'Alanzhou 199608101203 兰州 坤造 出生证',
     '兰州夏令时 198807151100 兰州 乾造 家人口述',
@@ -1252,7 +1280,7 @@ export function loadSampleCases() {
   const textEl = document.getElementById('batch-textarea');
   if (textEl) {
     textEl.value = samples.join('\n');
-    applyBatchInput();
+    await applyBatchInput();
   }
 }
 
@@ -1515,7 +1543,8 @@ if (typeof window !== 'undefined') {
     // 把上次留存的批量命例先渲染出来，否则追加解析时列表看着是空的
     renderBatchList();
     renderSyncStatus();
-    await initCityData();
+    // 不 await：城市库慢，但首盘用不上它，让老师先看到盘
+    whenCityDataReady();
 
     if (state.teacher.token) {
       fetchTeacherName();
