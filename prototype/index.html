@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>红娘排盘 · 朱砂卷宗</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #F6F1E8;
+  --paper-2: #EFE8DB;
+  --desk: #E4D9C8;
+  --ink: #1C1916;
+  --ink-3: #5C564E;
+  --ink-5: #8A8378;
+  --line: #D9CFC0;
+  --cinnabar: #B23A2F;
+  --cinnabar-soft: #F3E4DF;
+  --seal-gold: #8A6A32;
+  --wood: #2F6B3A;
+  --fire: #C43C32;
+  --earth: #8A6A3B;
+  --metal: #8A6A32;
+  --water: #2F5F8A;
+  --font-serif: "Noto Serif SC", "Songti SC", serif;
+  --font-sans: "Noto Sans SC", "PingFang SC", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+html { background: var(--desk); }
+body {
+  font-family: var(--font-sans);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: .12;
+  background-image: repeating-linear-gradient(-18deg, transparent, transparent 2px, rgba(28,25,22,.08) 2px, rgba(28,25,22,.08) 3px);
+}
+
+.sheet {
+  max-width: 430px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--paper);
+  position: relative;
+  box-shadow: 0 0 0 1px #d2c6b4, 0 18px 50px rgba(28,25,22,.12);
+}
+
+.main-header {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 8px;
+}
+.title-bar h1 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .18em;
+}
+.back { color: var(--ink-3); font-size: 18px; }
+.header-actions button {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--cinnabar);
+  color: var(--cinnabar);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 2px 0;
+  margin-left: 14px;
+  cursor: pointer;
+}
+
+.tabs { display: flex; padding: 0 6px; }
+.tab {
+  flex: 1;
+  text-align: center;
+  padding: 10px 0 12px;
+  font-size: 13px;
+  color: var(--ink-5);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.tab.active {
+  color: var(--ink);
+  font-weight: 500;
+  border-bottom-color: var(--cinnabar);
+}
+
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(178,58,47,.04), transparent 70%),
+    var(--paper);
+}
+.avatar {
+  width: 48px;
+  height: 48px;
+  border: 1.5px solid var(--cinnabar);
+  color: var(--cinnabar);
+  font-family: var(--font-serif);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--cinnabar-soft);
+}
+.profile-info { flex: 1; min-width: 0; }
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--cinnabar);
+  color: var(--cinnabar);
+  font-family: var(--font-serif);
+  font-size: 12px;
+  line-height: 1;
+}
+.date-row {
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.55;
+}
+
+.banner {
+  display: none;
+  background: var(--cinnabar);
+  color: #fff;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: .06em;
+  padding: 8px 12px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 12px;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line);
+}
+.toolbar label { cursor: pointer; color: var(--ink); }
+.toolbar input { accent-color: var(--cinnabar); }
+.toolbar button {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.audit-box {
+  margin: 0;
+  padding: 10px 16px 12px 18px;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--cinnabar);
+  background: var(--cinnabar-soft);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+.audit-box p { margin: 0; }
+.audit-kicker {
+  font-family: var(--font-serif);
+  color: var(--cinnabar);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.highlight { color: var(--cinnabar); font-weight: 700; }
+.alert-green { color: var(--wood); margin-top: 4px; }
+.alert-yellow { color: var(--cinnabar); margin-top: 4px; font-weight: 700; }
+.audit-box a { color: var(--cinnabar); }
+
+.chart-table { background: var(--paper); font-size: 13px; }
+.row {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+.row.bg-alt { background: rgba(239,232,219,.55); }
+.cell {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 2px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.col-title {
+  flex: 0.62;
+  color: var(--ink-5);
+  font-size: 11px;
+  letter-spacing: .08em;
+  background: var(--paper-2);
+}
+.header-row .cell {
+  color: var(--ink-5);
+  font-size: 11px;
+  letter-spacing: .12em;
+  padding: 8px 2px;
+}
+.col-day {
+  background: rgba(178,58,47,.05);
+  box-shadow: inset 2px 0 0 var(--cinnabar);
+}
+.col-hour.changed {
+  background: var(--cinnabar-soft);
+  box-shadow: inset 0 0 0 1.5px var(--cinnabar);
+}
+
+.tian-gan, .di-zhi {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  position: relative;
+}
+.wx-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  margin-left: 3px;
+  vertical-align: 10px;
+}
+.wx-dot.wood { background: var(--wood); }
+.wx-dot.fire { background: var(--fire); }
+.wx-dot.earth { background: var(--earth); }
+.wx-dot.metal { background: var(--metal); }
+.wx-dot.water { background: var(--water); }
+
+.wood { color: var(--wood); }
+.fire { color: var(--fire); }
+.earth { color: var(--earth); }
+.metal { color: var(--metal); }
+.water { color: var(--water); }
+
+.zang-gan, .fu-xing { font-size: 12px; line-height: 1.45; }
+.shensha-list {
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--seal-gold);
+}
+.shensha-list span { display: block; cursor: pointer; }
+.shensha-list span.note::after {
+  content: "*";
+  color: var(--cinnabar);
+  margin-left: 1px;
+}
+
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(28,25,22,.35);
+  display: none;
+  z-index: 100;
+}
+.drawer {
+  position: fixed;
+  left: 0; right: 0; bottom: -100%;
+  max-width: 430px;
+  margin: 0 auto;
+  background: var(--paper);
+  z-index: 101;
+  transition: bottom .28s ease;
+  padding: 18px 18px 28px;
+  max-height: 82vh;
+  overflow-y: auto;
+  border-top: 3px solid var(--cinnabar);
+}
+.drawer.open { bottom: 0; }
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-family: var(--font-serif);
+  font-size: 16px;
+}
+.drawer-close { cursor: pointer; color: var(--ink-5); font-size: 22px; }
+.setting-item {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed var(--line);
+}
+.setting-item label { display: block; font-weight: 500; margin-bottom: 4px; }
+.setting-desc { font-size: 12px; color: var(--ink-5); margin-top: 6px; }
+
+.compare-container { display: flex; border: 1px solid var(--line); }
+.compare-col { flex: 1; padding: 14px; }
+.compare-col:first-child { border-right: 1px solid var(--line); background: var(--paper-2); }
+.compare-kicker { font-size: 12px; color: var(--ink-5); margin-bottom: 8px; }
+.compare-val {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  letter-spacing: .06em;
+}
+.diff-highlight {
+  color: var(--cinnabar);
+  box-shadow: inset 0 -2px 0 var(--cinnabar);
+}
+.compare-desc { font-size: 12px; color: var(--ink-5); margin-top: 12px; line-height: 1.6; }
+
+.notes-container, .info-container { padding: 18px 16px 28px; }
+.note-item {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--cinnabar);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+.note-input-container { display: flex; gap: 8px; margin-bottom: 16px; }
+.note-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: #fffdf8;
+  font-family: inherit;
+  font-size: 14px;
+}
+.note-btn, .primary-btn {
+  background: var(--cinnabar);
+  color: #fff;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+.note-btn { padding: 0 14px; }
+.primary-btn {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  letter-spacing: .2em;
+  margin-top: 8px;
+}
+.info-row { margin-bottom: 14px; }
+.info-label { font-size: 11px; letter-spacing: .12em; color: var(--ink-5); margin-bottom: 6px; }
+.info-value {
+  font-size: 15px;
+  padding: 10px 12px;
+  background: #fffdf8;
+  border: 1px solid var(--line);
+}
+.placeholder-card {
+  margin: 24px 16px;
+  padding: 28px 16px;
+  text-align: center;
+  border: 1px dashed var(--line);
+  color: var(--ink-5);
+}
+.placeholder-card h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-serif);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: 86vw;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 10px 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  display: none;
+  z-index: 200;
+}
+</style>
+</head>
+<body>
+<div class="sheet">
+<header class="main-header">
+  <div class="title-bar">
+    <span class="back">‹</span>
+    <h1>红娘排盘</h1>
+    <div class="header-actions">
+      <button onclick="openDrawer('settings')">口径</button>
+      <button onclick="openDrawer('compare')">对照</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <div class="tab" onclick="switchTab('info')">基本信息</div>
+    <div class="tab active" onclick="switchTab('chart')">基本排盘</div>
+    <div class="tab" onclick="switchTab('detail')">专业细盘</div>
+    <div class="tab" onclick="switchTab('notes')">断事笔记</div>
+  </div>
+</header>
+
+<div id="tab-info" class="tab-pane">
+  <div class="info-container">
+    <div class="info-row"><div class="info-label">姓名</div><div class="info-value">Alanzhou</div></div>
+    <div class="info-row"><div class="info-label">性别</div><div class="info-value">坤造（女）</div></div>
+    <div class="info-row"><div class="info-label">出生地</div><div class="info-value">兰州市（103.82°E）</div></div>
+    <div class="info-row"><div class="info-label">历法</div><div class="info-value">公历</div></div>
+    <div class="info-row">
+      <div class="info-label">出生时间</div>
+      <div class="info-value">
+        1996-08-10 12:03
+        <div style="font-size:12px;color:var(--ink-5);margin-top:4px;">农历：1996年六月廿六 午时</div>
+      </div>
+    </div>
+    <button class="primary-btn" onclick="switchTab('chart'); showToast('排盘已刷新')">排盘</button>
+  </div>
+</div>
+
+<div id="tab-chart" class="tab-pane active">
+  <div class="profile-card">
+    <div class="avatar">子</div>
+    <div class="profile-info">
+      <div class="name-row">Alanzhou <span class="seal">坤</span></div>
+      <div class="date-row">农历 1996年六月廿六 午时</div>
+      <div class="date-row">阳历 1996年08月10日 12:03:00</div>
+    </div>
+  </div>
+
+  <div id="solar-banner" class="banner">时柱因真太阳时发生变化</div>
+
+  <div class="toolbar">
+    <label><input type="checkbox" id="toolbar-solar" onchange="toggleToolbarSolar()"> 真太阳时</label>
+    <span>子时 · 流派1 · 未交界</span>
+    <button onclick="toggleAudit()">朱批过程</button>
+  </div>
+
+  <div id="audit-box" class="audit-box">
+    <div class="audit-kicker">朱批</div>
+    <div id="audit-content">
+      <p>北京时间 12:03:00</p>
+      <p>→ 夏令时：未命中（1996，非 1986–1991）</p>
+      <p>→ 经度差 (103.82−120)×4 = −64.7 分</p>
+      <p>→ 均时差 −4.8 分</p>
+      <p>→ 真太阳时 <span class="highlight">10:53:48</span>（开关打开后才改四柱）</p>
+      <p>→ 立秋 1996-08-07 约 14 时已过，月柱申</p>
+      <p>→ 子时政策：未触发</p>
+      <div class="alert-green">● 非交界 <a href="#" onclick="showFakeBoundary(); return false;">看交界示例</a></div>
+    </div>
+  </div>
+
+  <div class="chart-table">
+    <div class="row header-row">
+      <div class="cell col-title">日期</div>
+      <div class="cell">年柱</div>
+      <div class="cell">月柱</div>
+      <div class="cell col-day">日柱</div>
+      <div class="cell col-hour">时柱</div>
+    </div>
+    <div class="row">
+      <div class="cell col-title">主星</div>
+      <div class="cell">正印</div>
+      <div class="cell">正印</div>
+      <div class="cell col-day">元女</div>
+      <div class="cell col-hour" id="sz-zhu">伤官</div>
+    </div>
+    <div class="row">
+      <div class="cell col-title">天干</div>
+      <div class="cell tian-gan fire">丙<span class="wx-dot fire"></span></div>
+      <div class="cell tian-gan fire">丙<span class="wx-dot fire"></span></div>
+      <div class="cell tian-gan earth col-day">己<span class="wx-dot earth"></span></div>
+      <div class="cell tian-gan metal col-hour" id="sz-gan">庚<span class="wx-dot metal"></span></div>
+    </div>
+    <div class="row">
+      <div class="cell col-title">地支</div>
+      <div class="cell di-zhi water">子<span class="wx-dot water"></span></div>
+      <div class="cell di-zhi metal">申<span class="wx-dot metal"></span></div>
+      <div class="cell di-zhi wood col-day">卯<span class="wx-dot wood"></span></div>
+      <div class="cell di-zhi fire col-hour" id="sz-zhi">午<span class="wx-dot fire"></span></div>
+    </div>
+    <div class="row bg-alt">
+      <div class="cell col-title">藏干</div>
+      <div class="cell zang-gan water">癸水</div>
+      <div class="cell zang-gan"><span class="metal">庚金</span><br><span class="water">壬水</span><br><span class="earth">戊土</span></div>
+      <div class="cell zang-gan wood col-day">乙木</div>
+      <div class="cell zang-gan col-hour" id="sz-zang"><span class="fire">丁火</span><br><span class="earth">己土</span></div>
+    </div>
+    <div class="row bg-alt">
+      <div class="cell col-title">副星</div>
+      <div class="cell fu-xing">偏财</div>
+      <div class="cell fu-xing">伤官<br>正财<br>劫财</div>
+      <div class="cell fu-xing col-day">七杀</div>
+      <div class="cell fu-xing col-hour" id="sz-fu">偏印<br>比肩</div>
+    </div>
+    <div class="row">
+      <div class="cell col-title">星运</div>
+      <div class="cell">绝</div>
+      <div class="cell">沐浴</div>
+      <div class="cell col-day">病</div>
+      <div class="cell col-hour" id="sz-xingyun">临官</div>
+    </div>
+    <div class="row">
+      <div class="cell col-title">自坐</div>
+      <div class="cell">胎</div>
+      <div class="cell">病</div>
+      <div class="cell col-day">病</div>
+      <div class="cell col-hour" id="sz-zizuo">沐浴</div>
+    </div>
+    <div class="row">
+      <div class="cell col-title">空亡</div>
+      <div class="cell">申酉</div>
+      <div class="cell">辰巳</div>
+      <div class="cell col-day">申酉</div>
+      <div class="cell col-hour" id="sz-kongwang">戌亥</div>
+    </div>
+    <div class="row">
+      <div class="cell col-title">纳音</div>
+      <div class="cell">涧下水</div>
+      <div class="cell">山下火</div>
+      <div class="cell col-day">城头土</div>
+      <div class="cell col-hour" id="sz-nayin">路旁土</div>
+    </div>
+    <div class="row">
+      <div class="cell col-title">神煞</div>
+      <div class="cell shensha-list">
+        <span onclick="showSource('天乙贵人')">天乙贵人</span>
+        <span onclick="showSource('福星贵人')" class="note">福星贵人</span>
+        <span onclick="showSource('德秀贵人')" class="note">德秀贵人</span>
+        <span onclick="showSource('桃花')">桃花</span>
+      </div>
+      <div class="cell shensha-list">
+        <span onclick="showSource('天乙贵人')">天乙贵人</span>
+        <span onclick="showSource('文昌贵人')">文昌贵人</span>
+        <span onclick="showSource('德秀贵人')" class="note">德秀贵人</span>
+        <span onclick="showSource('学堂')" class="note">学堂</span>
+        <span onclick="showSource('金舆')">金舆</span>
+        <span onclick="showSource('劫煞')">劫煞</span>
+      </div>
+      <div class="cell shensha-list col-day">
+        <span onclick="showSource('太极贵人')">太极贵人</span>
+        <span onclick="showSource('德秀贵人')" class="note">德秀贵人</span>
+        <span onclick="showSource('勾绞煞')">勾绞煞</span>
+        <span onclick="showSource('红鸾')">红鸾</span>
+        <span onclick="showSource('九丑日')">九丑日</span>
+      </div>
+      <div class="cell shensha-list col-hour" id="sz-shensha">
+        <span onclick="showSource('禄神')">禄神</span>
+        <span onclick="showSource('流霞')">流霞</span>
+        <span onclick="showSource('灾煞')">灾煞</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="tab-detail" class="tab-pane">
+  <div class="placeholder-card">
+    <h3>二期 · 起运与流年</h3>
+    <p>五行示意：丙2 己1 庚1 / 子申卯午</p>
+  </div>
+</div>
+
+<div id="tab-notes" class="tab-pane">
+  <div class="notes-container">
+    <div class="note-input-container">
+      <input type="text" id="note-input" class="note-input" placeholder="写下断事笔记…">
+      <button class="note-btn" onclick="addNote()">朱批</button>
+    </div>
+    <div id="note-list">
+      <div class="note-item">问真未开真太阳时，兰州 12:03 时柱或为巳。</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="overlay" id="overlay" onclick="closeAllDrawers()"></div>
+<div class="drawer" id="drawer-settings">
+  <div class="drawer-header"><span>口径</span><span class="drawer-close" onclick="closeAllDrawers()">×</span></div>
+  <div class="setting-item">
+    <label><input type="checkbox" id="setting-solar" onchange="syncSolar(this.checked)"> 真太阳时</label>
+    <div class="setting-desc">修正经度差与均时差。非沪杭一带都会跳柱：北京 12%、广州 23%、兰州 54%。</div>
+  </div>
+  <div class="setting-item">
+    <label>子时流派</label>
+    <label><input type="radio" name="zishi" checked> 流派1 · 子初换日（问真默认）</label>
+    <label><input type="radio" name="zishi"> 流派2 · 早晚子时</label>
+    <div class="setting-desc">本命不在子时交界，无影响。</div>
+  </div>
+  <div class="setting-item" style="opacity:.6">
+    <label>节气交节</label>
+    <label><input type="radio" checked disabled> 年/月柱用北京时间交节</label>
+    <div class="setting-desc">已冻结，本期不改。</div>
+  </div>
+</div>
+
+<div class="drawer" id="drawer-compare">
+  <div class="drawer-header"><span>对照</span><span class="drawer-close" onclick="closeAllDrawers()">×</span></div>
+  <div class="compare-container">
+    <div class="compare-col">
+      <div class="compare-kicker">问真 · 真太阳关</div>
+      <div class="compare-val">丙子 丙申 己卯 庚午</div>
+    </div>
+    <div class="compare-col">
+      <div class="compare-kicker">本盘当前口径</div>
+      <div class="compare-val" id="compare-current-val">丙子 丙申 己卯 庚午</div>
+    </div>
+  </div>
+  <div class="compare-desc">
+    神煞条数不同标「表不同」。四柱不同标「口径 / 历法」。<br>
+    朱砂下划线表示不一致。
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const defaultShi = {
+  zhu: '伤官', gan: '庚', ganClass: 'metal', ganWuxing: '金',
+  zhi: '午', zhiClass: 'fire', zhiWuxing: '火',
+  zang: '<span class="fire">丁火</span><br><span class="earth">己土</span>',
+  fu: '偏印<br>比肩', xingyun: '临官', zizuo: '沐浴', kongwang: '戌亥', nayin: '路旁土',
+  shensha: '<span onclick="showSource(\'禄神\')">禄神</span><span onclick="showSource(\'流霞\')">流霞</span><span onclick="showSource(\'灾煞\')">灾煞</span>'
+};
+const solarShi = {
+  zhu: '比肩', gan: '己', ganClass: 'earth', ganWuxing: '土',
+  zhi: '巳', zhiClass: 'fire', zhiWuxing: '火',
+  zang: '<span class="earth">戊土</span><br><span class="metal">庚金</span><br><span class="fire">丙火</span>',
+  fu: '劫财<br>伤官<br>正印', xingyun: '帝旺', zizuo: '帝旺', kongwang: '戌亥', nayin: '大林木',
+  shensha: '<span onclick="showSource(\'劫煞\')">劫煞</span><span onclick="showSource(\'驿马\')">驿马</span>'
+};
+const SHENSHA_SOURCE = {
+  '天乙贵人': '甲戊庚牛羊，乙己鼠猴乡（日干查四支）',
+  '福星贵人': '口诀有两套 · 表源待老师确认',
+  '德秀贵人': '月令德秀 · 表源待老师确认',
+  '桃花': '亥卯未见子（日支查四柱）',
+  '文昌贵人': '甲乙巳午报（日干查四支）',
+  '学堂': '日干长生之位 · 表源待老师确认',
+  '金舆': '甲龙乙蛇丙戌马（日干查支）',
+  '劫煞': '申子辰见巳（年支三合）',
+  '太极贵人': '甲乙生人子午中（日干查支）',
+  '勾绞煞': '阳男阴女顺数四（年支起）',
+  '红鸾': '子年红鸾在卯（年支查表）',
+  '九丑日': '日柱查表',
+  '禄神': '甲禄在寅，己禄在午',
+  '流霞': '甲鸡乙犬丙蛇中（日干查支）',
+  '灾煞': '申子辰见午（年支三合）',
+  '天喜': '红鸾对冲',
+  '孤辰': '亥子丑人见寅为孤',
+  '寡宿': '亥子丑人见巳为寡',
+  '阴差阳错': '日柱查表',
+  '驿马': '申子辰马在寅',
+  '羊刃': '甲刃在卯（日干）'
+};
+
+let auditOpen = true;
+const auditDefaultHTML = document.getElementById('audit-content').innerHTML;
+
+function toggleAudit() {
+  auditOpen = !auditOpen;
+  document.getElementById('audit-box').style.display = auditOpen ? 'block' : 'none';
+}
+function showFakeBoundary() {
+  document.getElementById('audit-content').innerHTML =
+    '<p>北京时间 11:05:00（演示）</p>' +
+    '<p>→ 真太阳时 <span class="highlight">09:55:48</span></p>' +
+    '<div class="alert-yellow">● 距时辰交界 5 分钟</div>' +
+    '<a href="#" onclick="resetAudit();return false;">回到本命</a>';
+}
+function resetAudit() {
+  document.getElementById('audit-content').innerHTML = auditDefaultHTML;
+}
+function syncSolar(isChecked) {
+  document.getElementById('toolbar-solar').checked = isChecked;
+  document.getElementById('setting-solar').checked = isChecked;
+  applySolarState(isChecked);
+}
+function toggleToolbarSolar() {
+  syncSolar(document.getElementById('toolbar-solar').checked);
+}
+function applySolarState(isSolar) {
+  var data = isSolar ? solarShi : defaultShi;
+  document.getElementById('sz-zhu').innerHTML = data.zhu;
+  document.getElementById('sz-gan').className = 'cell tian-gan col-hour ' + data.ganClass + (isSolar ? ' changed' : '');
+  document.getElementById('sz-gan').innerHTML = data.gan + '<span class="wx-dot ' + data.ganClass + '"></span>';
+  document.getElementById('sz-zhi').className = 'cell di-zhi col-hour ' + data.zhiClass + (isSolar ? ' changed' : '');
+  document.getElementById('sz-zhi').innerHTML = data.zhi + '<span class="wx-dot ' + data.zhiClass + '"></span>';
+  document.getElementById('sz-zang').innerHTML = data.zang;
+  document.getElementById('sz-fu').innerHTML = data.fu;
+  document.getElementById('sz-xingyun').innerHTML = data.xingyun;
+  document.getElementById('sz-zizuo').innerHTML = data.zizuo;
+  document.getElementById('sz-kongwang').innerHTML = data.kongwang;
+  document.getElementById('sz-nayin').innerHTML = data.nayin;
+  document.getElementById('sz-shensha').innerHTML = data.shensha;
+  document.querySelectorAll('.col-hour').forEach(function (el) {
+    if (isSolar) el.classList.add('changed');
+    else el.classList.remove('changed');
+  });
+  document.getElementById('solar-banner').style.display = isSolar ? 'block' : 'none';
+  var compVal = document.getElementById('compare-current-val');
+  compVal.innerHTML = isSolar
+    ? '丙子 丙申 己卯 <span class="diff-highlight">己巳</span>'
+    : '丙子 丙申 己卯 庚午';
+}
+function switchTab(tabId) {
+  document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+  document.querySelectorAll('.tab-pane').forEach(function (p) { p.classList.remove('active'); });
+  var tabs = document.querySelectorAll('.tab');
+  var map = { info: 0, chart: 1, detail: 2, notes: 3 };
+  if (tabs[map[tabId]]) tabs[map[tabId]].classList.add('active');
+  document.getElementById('tab-' + tabId).classList.add('active');
+}
+function openDrawer(id) {
+  document.getElementById('overlay').style.display = 'block';
+  document.getElementById('drawer-' + id).classList.add('open');
+}
+function closeAllDrawers() {
+  document.getElementById('overlay').style.display = 'none';
+  document.querySelectorAll('.drawer').forEach(function (d) { d.classList.remove('open'); });
+}
+function showToast(msg) {
+  var toast = document.getElementById('toast');
+  toast.innerText = msg;
+  toast.style.display = 'block';
+  setTimeout(function () { toast.style.display = 'none'; }, 2400);
+}
+function showSource(shensha) {
+  showToast(shensha + '：' + (SHENSHA_SOURCE[shensha] || '口诀待补'));
+}
+function addNote() {
+  var input = document.getElementById('note-input');
+  var val = input.value.trim();
+  if (!val) return;
+  var item = document.createElement('div');
+  item.className = 'note-item';
+  item.innerText = val;
+  document.getElementById('note-list').insertBefore(item, document.getElementById('note-list').firstChild);
+  input.value = '';
+}
+</script>
+</body>
+</html>

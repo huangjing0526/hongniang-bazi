@@ -1,0 +1,11 @@
+{
+  "name": "hongniang-bazi-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "红娘八字排盘 · 朱砂卷宗 Web 端",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  }
+}

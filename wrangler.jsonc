@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hongniang-bazi",
+  "main": "cloud/src/index.mjs",
+  "compatibility_date": "2026-05-28",
+
+  // 自定义域名待定：dsxzai.com 不在当前账号（e6193477…）下，locxai.com 尚未生效（pending）。
+  // zone 可用后把下面这段解开，pattern 换成实际域名，再 npm run deploy 即可。
+  // "routes": [
+  //   { "pattern": "paipan.locxai.com", "custom_domain": true }
+  // ],
+  "workers_dev": true,
+
+  // 只发布 scripts/build.mjs 组装出来的 dist/。
+  // docs/ 与 engine/test/ 永远不进 dist——本机 web/server.js 会把项目根目录整个暴露出去，
+  // 线上不能重演这个问题。
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hongniang-bazi-db",
+      "database_id": "e46890df-1f88-404b-9a95-714c27982738",
+      "migrations_dir": "cloud/migrations"
+    }
+  ]
+}

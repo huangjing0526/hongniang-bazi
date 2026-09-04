@@ -1,0 +1,14 @@
+{
+  "name": "hongniang-bazi-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "红娘八字排盘 · 历法引擎（夏令时 / 真太阳时 / 子时两派 + 审计）",
+  "scripts": {
+    "golden": "node src/cli.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "lunar-javascript": "^1.7.3"
+  }
+}

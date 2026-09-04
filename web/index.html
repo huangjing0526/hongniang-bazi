@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>红娘排盘 · 朱砂卷宗</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #F6F1E8;
+  --paper-2: #EFE8DB;
+  --desk: #E4D9C8;
+  --ink: #1C1916;
+  --ink-3: #5C564E;
+  --ink-5: #8A8378;
+  --line: #D9CFC0;
+  --cinnabar: #B23A2F;
+  --cinnabar-soft: #F3E4DF;
+  --seal-gold: #8A6A32;
+  --wood: #2F6B3A;
+  --fire: #C43C32;
+  --earth: #8A6A3B;
+  --metal: #8A6A32;
+  --water: #2F5F8A;
+  --font-serif: "Noto Serif SC", "Songti SC", serif;
+  --font-sans: "Noto Sans SC", "PingFang SC", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+html { background: var(--desk); }
+body {
+  font-family: var(--font-sans);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: .12;
+  background-image: repeating-linear-gradient(-18deg, transparent, transparent 2px, rgba(28,25,22,.08) 2px, rgba(28,25,22,.08) 3px);
+}
+
+.sheet {
+  max-width: 460px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--paper);
+  position: relative;
+  box-shadow: 0 0 0 1px #d2c6b4, 0 18px 50px rgba(28,25,22,.12);
+  display: flex;
+  flex-direction: column;
+}
+
+.main-header {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px 4px;
+}
+/* 同步状态：只报状态，不打断排盘 */
+.sync-bar {
+  padding: 0 16px 8px;
+  text-align: right;
+}
+.sync-status {
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: var(--ink-5);
+  white-space: nowrap;
+}
+.sync-status.sync-ok { color: var(--wood); }
+.sync-status.sync-error { color: var(--cinnabar); }
+.sync-status.sync-local { color: var(--ink-5); }
+
+.title-bar h1 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .18em;
+}
+.header-actions button {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--cinnabar);
+  color: var(--cinnabar);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 2px 0;
+  margin-left: 10px;
+  cursor: pointer;
+}
+
+.tabs { display: flex; padding: 0 4px; border-top: 1px solid rgba(217,207,192,.3); }
+.tab {
+  flex: 1;
+  text-align: center;
+  padding: 10px 0 12px;
+  font-size: 13px;
+  color: var(--ink-5);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  user-select: none;
+}
+.tab.active {
+  color: var(--ink);
+  font-weight: 500;
+  border-bottom-color: var(--cinnabar);
+}
+
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* 命主基本信息条 */
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(178,58,47,.04), transparent 70%),
+    var(--paper);
+}
+.avatar {
+  width: 46px;
+  height: 46px;
+  border: 1.5px solid var(--cinnabar);
+  color: var(--cinnabar);
+  font-family: var(--font-serif);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--cinnabar-soft);
+}
+.profile-info { flex: 1; min-width: 0; }
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--cinnabar);
+  color: var(--cinnabar);
+  font-family: var(--font-serif);
+  font-size: 12px;
+  line-height: 1;
+}
+.date-row {
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.55;
+  word-break: break-all;
+}
+
+/* 第一屏常驻分歧风险条（§7.2 / 优先级 2） */
+.risk-box {
+  margin: 0;
+  padding: 10px 16px 11px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.risk-peaceful {
+  background: rgba(47,107,58,.08);
+  border-left: 3px solid var(--wood);
+  color: var(--wood);
+}
+.risk-peaceful-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.risk-has-warn {
+  background: var(--cinnabar-soft);
+  border-left: 3px solid var(--cinnabar);
+  color: var(--cinnabar);
+}
+.risk-has-info {
+  background: rgba(138,106,50,.09);
+  border-left: 3px solid var(--seal-gold);
+  color: var(--seal-gold);
+}
+.risk-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.risk-list {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+.risk-item {
+  margin-top: 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.risk-badge {
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-weight: 700;
+  background: var(--cinnabar);
+  color: #fff;
+}
+.risk-item.level-info .risk-badge {
+  background: var(--seal-gold);
+}
+.risk-affects {
+  font-weight: 700;
+}
+.risk-message {
+  color: var(--ink);
+}
+
+/* 夏令时双盘提醒 */
+.dual-chart-alert {
+  padding: 10px 16px;
+  background: #FFF8E7;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--seal-gold);
+  font-size: 12px;
+}
+.dual-title { font-weight: 700; color: var(--seal-gold); margin-bottom: 4px; }
+.dual-desc { color: var(--ink-3); margin-bottom: 8px; }
+.dual-tabs { display: flex; gap: 8px; }
+.dual-tab-btn {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  text-align: center;
+}
+.dual-tab-btn.active {
+  background: var(--cinnabar);
+  color: #fff;
+  border-color: var(--cinnabar);
+}
+
+/* 时柱翻转横幅 */
+.banner {
+  display: none;
+  background: var(--cinnabar);
+  color: #fff;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: .06em;
+  padding: 7px 12px;
+}
+
+/* 工具栏与朱批 */
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.toolbar label {
+  cursor: pointer;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+/* 两组开关之间加一道竖线，视觉上分开「校正」与「子时流派」 */
+.toolbar .toolbar-sep {
+  width: 1px;
+  height: 12px;
+  background: var(--line);
+}
+.toolbar #toolbar-status-text { margin-left: auto; white-space: nowrap; }
+.toolbar input { accent-color: var(--cinnabar); }
+.toolbar button {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+
+.audit-box {
+  margin: 0;
+  padding: 10px 16px 12px 18px;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--cinnabar);
+  background: var(--cinnabar-soft);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-3);
+  display: block;
+}
+.audit-kicker {
+  font-family: var(--font-serif);
+  color: var(--cinnabar);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.audit-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+.audit-step-name {
+  font-weight: 700;
+  color: var(--ink);
+  min-width: 72px;
+}
+.audit-step-val {
+  color: var(--cinnabar);
+  font-family: var(--font-serif);
+}
+.audit-step-note {
+  color: var(--ink-5);
+  font-size: 11px;
+}
+
+/* 细盘表格（严格 DETAIL_ROWS） */
+.chart-table { background: var(--paper); font-size: 13px; }
+.row {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+.row.bg-alt { background: rgba(239,232,219,.55); }
+.cell {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 2px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.col-title {
+  flex: 0.62;
+  color: var(--ink-5);
+  font-size: 11px;
+  letter-spacing: .08em;
+  background: var(--paper-2);
+}
+.header-row .cell {
+  color: var(--ink-5);
+  font-size: 11px;
+  letter-spacing: .12em;
+  padding: 8px 2px;
+}
+.col-day {
+  background: rgba(178,58,47,.05);
+  box-shadow: inset 2px 0 0 var(--cinnabar);
+}
+.col-hour.changed {
+  background: var(--cinnabar-soft);
+  box-shadow: inset 0 0 0 1.5px var(--cinnabar);
+}
+
+.tian-gan, .di-zhi {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  position: relative;
+}
+.wx-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  margin-left: 3px;
+  vertical-align: 10px;
+}
+.wx-dot.wood { background: var(--wood); }
+.wx-dot.fire { background: var(--fire); }
+.wx-dot.earth { background: var(--earth); }
+.wx-dot.metal { background: var(--metal); }
+.wx-dot.water { background: var(--water); }
+
+.wood { color: var(--wood); }
+.fire { color: var(--fire); }
+.earth { color: var(--earth); }
+.metal { color: var(--metal); }
+.water { color: var(--water); }
+
+.zang-gan, .fu-xing { font-size: 12px; line-height: 1.45; }
+.zhuxing-text { font-size: 13px; font-weight: 500; }
+.term-text { font-size: 12px; color: var(--ink-3); }
+.nayin-text { font-size: 12px; color: var(--ink-3); font-family: var(--font-serif); }
+
+.shensha-list {
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--seal-gold);
+}
+.shensha-list span {
+  display: block;
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+.shensha-list span:hover {
+  background: rgba(138,106,50,.12);
+}
+.shensha-list span.note::after {
+  content: "*";
+  color: var(--cinnabar);
+  margin-left: 1px;
+  font-weight: 700;
+}
+.shensha-empty { color: var(--ink-5); }
+
+.attribution {
+  max-width: 900px;
+  margin: 28px auto 40px;
+  padding: 0 18px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.9;
+  color: #8a7f6f;
+}
+.attribution a { color: #8A6A32; text-decoration: none; border-bottom: 1px solid rgba(138,106,50,.35); }
+.attribution a:hover { color: #B23A2F; }
+.city-precision-hint {
+  margin-top: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #7a5a1e;
+  background: rgba(138,106,50,.08);
+  border-left: 3px solid #8A6A32;
+  border-radius: 2px;
+}
+.city-opt-item .city-level {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #a89880;
+}
+.table-footer-notice {
+  padding: 10px 16px;
+  font-size: 11px;
+  color: var(--ink-5);
+  line-height: 1.6;
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--line);
+}
+
+/* 快速录入卡片与表单 */
+.quick-input-section {
+  padding: 16px;
+}
+
+/* 录入方式分段切换：单个 / 批量 */
+.mode-switch {
+  display: flex;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  margin-bottom: 16px;
+}
+.mode-btn {
+  flex: 1;
+  padding: 10px 0;
+  background: none;
+  border: none;
+  border-right: 1px solid var(--line);
+  font-family: var(--font-serif);
+  font-size: 14px;
+  letter-spacing: .08em;
+  color: var(--ink-5);
+  cursor: pointer;
+}
+.mode-btn:last-child { border-right: none; }
+.mode-btn:hover { color: var(--cinnabar); }
+.mode-btn.active {
+  background: var(--paper);
+  color: var(--cinnabar);
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--cinnabar);
+}
+.input-mode-pane { display: none; }
+.input-mode-pane.active { display: block; }
+.card-box {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.card-title {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-sub {
+  font-size: 12px;
+  color: var(--ink-5);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.input-row {
+  margin-bottom: 12px;
+}
+.input-label {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.text-input, .select-input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  background: #fffdf8;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+}
+.text-input:focus, .select-input:focus {
+  outline: none;
+  border-color: var(--cinnabar);
+}
+
+.quick-preview {
+  font-size: 12px;
+  margin-top: 4px;
+}
+.quick-preview.valid { color: var(--wood); font-weight: 500; }
+.quick-preview.invalid { color: var(--cinnabar); }
+.quick-preview.typing { color: var(--ink-5); }
+
+.radio-group {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  padding: 4px 0;
+}
+.radio-group label {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.radio-group input { accent-color: var(--cinnabar); }
+
+/* 城市联想下拉 */
+.city-search-wrap {
+  position: relative;
+}
+.city-results-drop {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  background: #fffdf8;
+  border: 1px solid var(--line);
+  border-top: none;
+  z-index: 30;
+  display: none;
+  box-shadow: 0 4px 12px rgba(28,25,22,.1);
+}
+.city-opt-item {
+  padding: 8px 10px;
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(217,207,192,.3);
+}
+.city-opt-item:hover {
+  background: var(--cinnabar-soft);
+}
+.city-opt-item.empty {
+  color: var(--ink-5);
+  cursor: default;
+}
+.city-lng { color: var(--ink-5); }
+
+/* 按钮规范 */
+.primary-btn {
+  display: block;
+  width: 100%;
+  padding: 11px;
+  background: var(--cinnabar);
+  color: #fff;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: .12em;
+  cursor: pointer;
+  text-align: center;
+}
+.primary-btn:hover {
+  background: #9d3026;
+}
+.secondary-btn {
+  display: inline-block;
+  padding: 6px 12px;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.secondary-btn:hover {
+  border-color: var(--cinnabar);
+  color: var(--cinnabar);
+}
+
+/* 批量粘贴列表 */
+.batch-textarea {
+  width: 100%;
+  height: 90px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: #fffdf8;
+  font-family: monospace, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.batch-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.batch-count-bar {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-bottom: 8px;
+}
+.batch-item {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  margin-bottom: 6px;
+  cursor: pointer;
+  border-left: 3px solid var(--line);
+  transition: all .15s ease;
+}
+.batch-item:hover {
+  border-left-color: var(--cinnabar);
+}
+.batch-item.active {
+  border-left-color: var(--cinnabar);
+  background: var(--cinnabar-soft);
+}
+.batch-item.item-error {
+  border-left-color: #888;
+  opacity: .75;
+}
+.batch-item-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.batch-name { font-family: var(--font-serif); }
+.batch-item-del {
+  margin-left: auto;
+  padding: 0 4px;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--ink-5);
+  cursor: pointer;
+}
+.batch-item-del:hover { color: var(--cinnabar); }
+.batch-badge {
+  font-size: 10px;
+  background: var(--cinnabar);
+  color: #fff;
+  padding: 1px 4px;
+}
+.batch-item-time {
+  font-size: 11px;
+  color: var(--ink-5);
+  margin-top: 2px;
+}
+.batch-item-err {
+  font-size: 11px;
+  color: var(--cinnabar);
+  margin-top: 2px;
+}
+
+/* 老师裁定表单卡片（§13.2 / 优先级 4） */
+.verdict-box {
+  margin: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--cinnabar);
+  background: #fffdf8;
+}
+.verdict-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.verdict-header h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 15px;
+  color: var(--cinnabar);
+}
+.verdict-sub {
+  font-size: 11px;
+  color: var(--ink-5);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+.verdict-chart-id {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-bottom: 10px;
+  padding: 4px 8px;
+  background: var(--paper-2);
+}
+.verdict-req {
+  color: var(--cinnabar);
+  font-weight: 700;
+  margin-left: 2px;
+}
+.disputed-pillars-grid {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.disputed-pillars-grid label {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.disputed-pillars-grid input { accent-color: var(--cinnabar); }
+.pillar-inputs-block {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.pillar-gz-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.pillar-gz-item input {
+  width: 58px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  font-size: 13px;
+}
+
+/* 裁定记录管理 Tab */
+.verdicts-container {
+  padding: 16px;
+}
+.verdict-stats-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.verdict-top-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.verdict-card {
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: var(--paper);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.card-consistent {
+  border-left: 3px solid var(--wood);
+}
+.card-disputed {
+  border-left: 3px solid var(--cinnabar);
+}
+.verdict-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.verdict-tag {
+  font-size: 11px;
+  padding: 2px 6px;
+  font-weight: 700;
+}
+.tag-consistent { background: rgba(47,107,58,.12); color: var(--wood); }
+.tag-disputed { background: var(--cinnabar-soft); color: var(--cinnabar); }
+.verdict-time { font-size: 11px; color: var(--ink-5); }
+.verdict-del-btn {
+  background: none;
+  border: none;
+  color: var(--ink-5);
+  cursor: pointer;
+  font-size: 11px;
+}
+.verdict-del-btn:hover { color: var(--cinnabar); }
+.source-tag {
+  display: inline-block;
+  padding: 0 4px;
+  background: var(--paper-2);
+  font-weight: 700;
+  color: var(--ink-3);
+}
+
+/* 口径对照页面 */
+.compare-pane-box {
+  padding: 16px;
+}
+.compare-container {
+  display: flex;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+.compare-col {
+  flex: 1;
+  padding: 14px 12px;
+}
+.compare-col:first-child {
+  border-right: 1px solid var(--line);
+  background: var(--paper-2);
+}
+.compare-kicker {
+  font-size: 12px;
+  color: var(--ink-5);
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+.comp-pillar-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+  border-bottom: 1px dashed rgba(217,207,192,.4);
+}
+.comp-pillar-item.comp-diff {
+  background: rgba(178,58,47,.08);
+}
+.comp-k { color: var(--ink-5); font-size: 12px; }
+.comp-v { font-family: var(--font-serif); font-size: 16px; font-weight: 700; }
+.highlight-cinnabar { color: var(--cinnabar); }
+
+.compare-diff-explanation {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: #fffdf8;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.alert-cinnabar { color: var(--cinnabar); font-weight: 700; margin-bottom: 4px; }
+.alert-green { color: var(--wood); font-weight: 700; margin-bottom: 4px; }
+.note-desc { color: var(--ink-3); }
+
+/* 抽屉与浮层 */
+
+/* Toast 提示 */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: 88vw;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 10px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  display: none;
+  z-index: 200;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  border-left: 3px solid var(--cinnabar);
+  white-space: pre-line;
+}
+.empty-placeholder {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--ink-5);
+  border: 1px dashed var(--line);
+}
+.empty-sub { font-size: 12px; margin-top: 4px; color: var(--ink-5); }
+</style>
+
+<!-- 预先以经典脚本模式加载 lunar-javascript UMD 依赖包，保证其全局对象存在 -->
+<script src="/engine/node_modules/lunar-javascript/lunar.js"></script>
+
+<!-- ImportMap 映射：将引擎内部的 'lunar-javascript' 裸模块路径重定向到我们定制的 ESM 适配器 -->
+<script type="importmap">
+{
+  "imports": {
+    "lunar-javascript": "/lunar-esm.js"
+  }
+}
+</script>
+
+</head>
+<body>
+<div class="sheet">
+
+<!-- 顶部导航栏 -->
+<header class="main-header">
+  <div class="title-bar">
+    <h1>红娘排盘 · 朱砂卷宗</h1>
+  </div>
+  <div class="sync-bar">
+    <span id="sync-status" class="sync-status sync-local">本机模式 · 记录只存这台电脑</span>
+  </div>
+  <div class="tabs">
+    <div class="tab" id="tab-btn-quick" onclick="window.app.switchTab('quick')">快速录入</div>
+    <div class="tab active" id="tab-btn-chart" onclick="window.app.switchTab('chart')">基本排盘</div>
+    <div class="tab" id="tab-btn-compare" onclick="window.app.switchTab('compare')">口径对照</div>
+    <div class="tab" id="tab-btn-verdicts" onclick="window.app.switchTab('verdicts')">老师裁定 (<span id="verdict-count-badge">0</span>)</div>
+  </div>
+</header>
+
+<!-- ===================================================================== -->
+<!-- TAB 1: 快速录入（最高优先级） -->
+<!-- ===================================================================== -->
+<div id="tab-quick" class="tab-pane">
+  <div class="quick-input-section">
+    <!-- 录入方式切换：单个录入 / 批量录入 -->
+    <div class="mode-switch">
+      <button type="button" class="mode-btn active" id="mode-btn-single" onclick="window.app.switchInputMode('single')">单个录入</button>
+      <button type="button" class="mode-btn" id="mode-btn-batch" onclick="window.app.switchInputMode('batch')">批量录入</button>
+    </div>
+
+    <!-- 单个录入：12 位纯数字输入 -->
+    <div id="input-mode-single" class="input-mode-pane active">
+    <div class="card-box">
+      <div class="card-title">
+        <span>12 位数字速记录入</span>
+        <span style="font-size:11px;color:var(--cinnabar);font-weight:normal;">一串数字直接敲</span>
+      </div>
+      <div class="card-sub">
+        直接键入 12 位紧凑纯数字（年4+月2+日2+时2+分2），如 <code>199303270255</code> → 1993-03-27 02:55。
+      </div>
+      <div class="input-row">
+        <label class="input-label" for="quick-12-input">12 位出生时间</label>
+        <input type="text" id="quick-12-input" class="text-input" placeholder="例如：199303270255" maxlength="12" value="199608101203">
+        <div id="quick-12-preview" class="quick-preview valid">✓ 识别为：1996-08-10 12:03</div>
+      </div>
+      <div class="input-row">
+        <label class="input-label" for="quick-name-input">客户姓名 / 编号</label>
+        <input type="text" id="quick-name-input" class="text-input" placeholder="例如：Alanzhou" value="Alanzhou">
+      </div>
+      <div class="input-row">
+        <label class="input-label">性别造化</label>
+        <div class="radio-group">
+          <label><input type="radio" name="quick-gender" value="female" checked> 坤造（女命）</label>
+          <label><input type="radio" name="quick-gender" value="male"> 乾造（男命）</label>
+        </div>
+      </div>
+      <div class="input-row">
+        <label class="input-label" for="city-search-input">出生地点（查经度以核校真太阳时）</label>
+        <div class="city-search-wrap">
+          <input type="text" id="city-search-input" class="text-input" placeholder="输入省、市或区县模糊搜索，如：兰州、朝阳" value="甘肃省 兰州市 城关区" oninput="window.app.onCitySearchInput(this.value)">
+          <div id="city-search-results" class="city-results-drop"></div>
+        </div>
+        <!-- 只选到省/市时提示精确到区县：地级市坐标是辖区质心，不是市中心 -->
+        <div id="city-precision-hint" class="city-precision-hint" style="display:none"></div>
+        <div style="display:none">
+        </div>
+      </div>
+      <div class="input-row">
+        <label class="input-label" for="custom-lng-input">经度微调 (°E)</label>
+        <input type="number" id="custom-lng-input" class="text-input" step="0.001" value="103.825" onchange="window.app.selectCity(state.input.cityName, Number(this.value))">
+      </div>
+      <button class="primary-btn" onclick="window.app.apply12DigitInput()">立即解析并排盘</button>
+    </div>
+    </div>
+
+    <!-- 批量录入：多行粘贴命例 -->
+    <div id="input-mode-batch" class="input-mode-pane">
+    <div class="card-box">
+      <div class="card-title">
+        <span>批量命例粘贴</span>
+        <button class="secondary-btn" onclick="window.app.loadSampleCases()">载入样盘库</button>
+      </div>
+      <div class="card-sub">
+        老师手上有一批盘时，一次性粘贴多行。支持「姓名 时间 地点 性别 来源」，一行一例。解析结果追加到下方列表，可分多次粘贴。
+      </div>
+      <textarea id="batch-textarea" class="batch-textarea" placeholder="例如：
+Alanzhou 199608101203 兰州 坤造 出生证
+兰州夏令时 198807151100 兰州 乾造 家人口述
+子时交界 199303272330 兰州 乾造 客户自报"></textarea>
+      <div class="batch-actions">
+        <button class="primary-btn" style="flex:1;" onclick="window.app.applyBatchInput()">解析并追加到列表</button>
+        <button class="secondary-btn" onclick="window.app.clearBatchCases()">清空列表</button>
+      </div>
+      <div id="batch-cases-list" style="margin-top:14px;"></div>
+    </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================================== -->
+<!-- TAB 2: 基本排盘（核心细盘表格与当场裁定） -->
+<!-- ===================================================================== -->
+<div id="tab-chart" class="tab-pane active">
+  <!-- 命主基本信息条 -->
+  <div class="profile-card">
+    <div class="avatar" id="profile-avatar">卯</div>
+    <div class="profile-info">
+      <div class="name-row" id="profile-name-row">Alanzhou <span class="seal">坤</span></div>
+      <div class="date-row" id="profile-lunar-row">农历：1996年六月廿六 午时</div>
+      <div class="date-row" id="profile-solar-row">阳历：1996年08月10日 12:03:00</div>
+    </div>
+  </div>
+
+  <!-- 夏令时双盘提醒与切换器 -->
+  <div id="dual-chart-container" style="display:none;"></div>
+
+  <!-- 第一屏常驻分歧风险条（§7.2 / 优先级 2） -->
+  <div id="risk-banner-box" class="risk-box"></div>
+
+  <!-- 时柱变动横幅 -->
+  <div id="solar-banner" class="banner">时柱因开启真太阳时发生跨时辰翻转</div>
+
+  <!-- 工具栏 -->
+  <div class="toolbar">
+    <label><input type="checkbox" id="toolbar-solar" onchange="window.app.syncSolar(this.checked)"> 真太阳时</label>
+    <label><input type="checkbox" id="toolbar-dst" onchange="window.app.syncDst(this.checked)"> 夏令时</label>
+    <span class="toolbar-sep"></span>
+    <label><input type="radio" name="toolbar-sect" value="1" checked onchange="window.app.syncSect(1)"> 子初换日</label>
+    <label><input type="radio" name="toolbar-sect" value="2" onchange="window.app.syncSect(2)"> 早晚子时</label>
+    <span id="toolbar-status-text">未交界</span>
+    <button style="white-space:nowrap" onclick="window.app.toggleAudit()">朱批过程</button>
+  </div>
+
+  <!-- 朱批计算过程 -->
+  <div id="audit-box" class="audit-box">
+    <div class="audit-kicker">朱批过程</div>
+    <div id="audit-content-list"></div>
+  </div>
+
+  <!-- 细盘十行表格 -->
+  <div class="chart-table" id="chart-table-body"></div>
+
+  <!-- 老师结构化裁定卡片（§13.2 / 优先级 4） -->
+  <div class="verdict-box" id="verdict-form-section">
+    <div class="verdict-header">
+      <h3>老师当场裁定</h3>
+      <span style="font-size:11px;color:var(--ink-5);">取代手写笔记 · 当场留痕</span>
+    </div>
+    <div class="verdict-sub">
+      若此盘排得不对，或与您师承的排法不同，请标出是哪一柱、正确的应该是什么；若排得对，也请勾选提交，让我们知道哪些盘是准的。
+    </div>
+    <div class="verdict-chart-id">
+      当前盘：<strong id="verdict-chart-summary">Alanzhou · 丙子 丙申 己卯 庚午</strong>
+    </div>
+
+    <div class="input-row">
+      <label class="input-label">分歧柱判定</label>
+      <div class="disputed-pillars-grid">
+        <label><input type="checkbox" id="verdict-consistent" onchange="window.app.onConsistentToggle(this.checked)"> 与我们一致 (无分歧)</label>
+        <label><input type="checkbox" id="verdict-pillar-year" onchange="window.app.onDisputedPillarToggle('year', this.checked)"> 年柱</label>
+        <label><input type="checkbox" id="verdict-pillar-month" onchange="window.app.onDisputedPillarToggle('month', this.checked)"> 月柱</label>
+        <label><input type="checkbox" id="verdict-pillar-day" onchange="window.app.onDisputedPillarToggle('day', this.checked)"> 日柱</label>
+        <label><input type="checkbox" id="verdict-pillar-time" onchange="window.app.onDisputedPillarToggle('time', this.checked)"> 时柱</label>
+      </div>
+      <div class="pillar-inputs-block">
+        <div class="pillar-gz-item" id="verdict-group-year" style="display:none;">
+          <span>年柱认定:</span><input type="text" id="verdict-gz-year" placeholder="如甲子" maxlength="2">
+        </div>
+        <div class="pillar-gz-item" id="verdict-group-month" style="display:none;">
+          <span>月柱认定:</span><input type="text" id="verdict-gz-month" placeholder="如丙申" maxlength="2">
+        </div>
+        <div class="pillar-gz-item" id="verdict-group-day" style="display:none;">
+          <span>日柱认定:</span><input type="text" id="verdict-gz-day" placeholder="如己卯" maxlength="2">
+        </div>
+        <div class="pillar-gz-item" id="verdict-group-time" style="display:none;">
+          <span>时柱认定:</span><input type="text" id="verdict-gz-time" placeholder="如己巳" maxlength="2">
+        </div>
+      </div>
+    </div>
+
+    <div class="input-row">
+      <label class="input-label">时间来源<span class="verdict-req">*（必填：唯一能分开记录有误与历法分歧的依据）</span></label>
+      <div class="radio-group">
+        <label><input type="radio" name="verdict-time-source" value="出生证" checked> 出生证</label>
+        <label><input type="radio" name="verdict-time-source" value="家人口述"> 家人口述</label>
+        <label><input type="radio" name="verdict-time-source" value="客户自报"> 客户自报</label>
+      </div>
+    </div>
+
+    <div class="input-row">
+      <label class="input-label" for="verdict-school-select">依据流派</label>
+      <select id="verdict-school-select" class="select-input">
+        <option value="子平真诠">子平真诠</option>
+        <option value="滴天髓">滴天髓</option>
+        <option value="渊海子平">渊海子平</option>
+        <option value="三命通会">三命通会</option>
+        <option value="穷通宝鉴">穷通宝鉴</option>
+        <option value="盲派命理">盲派命理</option>
+                <option value="家传师承">家传 / 师承实战</option>
+        <option value="custom">自定流派...</option>
+      </select>
+      <input type="text" id="verdict-school-custom" class="text-input" placeholder="若选自定，在此填写流派名称" style="margin-top:4px;">
+    </div>
+
+    <div class="input-row">
+      <label class="input-label" for="verdict-reason-input">一句话裁定理由</label>
+      <input type="text" id="verdict-reason-input" class="text-input" placeholder="例如：客户反馈巳时出生，家人口述午时但真太阳时应为巳时">
+    </div>
+
+    <button class="primary-btn" onclick="window.app.submitVerdict()">提交老师裁定</button>
+  </div>
+</div>
+
+<!-- ===================================================================== -->
+<!-- TAB 3: 口径对照（对照页与分歧高亮） -->
+<!-- ===================================================================== -->
+<div id="tab-compare" class="tab-pane">
+  <div class="compare-pane-box">
+    <div class="card-title">同一个盘 · 两套口径并排</div>
+    <div class="card-sub">
+      左边是不做任何校正、直接按钟表时排的盘；右边是您当前开关下的盘。不同的柱标朱砂。
+      哪一套对由您判断，工具不替您裁定。
+    </div>
+
+    <div class="compare-container">
+      <div class="compare-col">
+        <div class="compare-kicker">未校正（按钟表时直接排）</div>
+        <div id="compare-base-pillars"></div>
+      </div>
+      <div class="compare-col">
+        <div class="compare-kicker">当前口径</div>
+        <div id="compare-curr-pillars"></div>
+      </div>
+    </div>
+
+    <div id="compare-diff-explanation" class="compare-diff-explanation"></div>
+  </div>
+</div>
+
+<!-- ===================================================================== -->
+<!-- TAB 4: 老师裁定历史管理 -->
+<!-- ===================================================================== -->
+<div id="tab-verdicts" class="tab-pane">
+  <div class="verdicts-container">
+    <div class="card-title">老师历史裁定卷宗</div>
+    <div class="card-sub">
+      所有当场记录的老师裁定均安全保存在浏览器本地（localStorage）。可随时导出为标准 JSON 交付集成或给引擎提供真实错例支持。
+    </div>
+    <div class="verdict-top-actions">
+      <button class="primary-btn" style="flex:1;" onclick="window.app.exportVerdictsJson()">📥 导出裁定 JSON</button>
+      <button class="secondary-btn" onclick="window.app.clearAllVerdicts()">清空记录</button>
+    </div>
+    <div id="verdicts-list-container"></div>
+  </div>
+</div>
+
+</div><!-- .sheet -->
+
+<!-- 数据署名：GeoNames 为 CC BY 4.0，署名是许可证的强制要求，勿删 -->
+<footer class="attribution">
+  出生地经纬度数据来自
+  <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a>
+  （CC BY 4.0）· 历法底座 lunar-javascript（MIT）· 神煞与十神表据古籍自研
+</footer>
+
+<!-- 浮层 Toast -->
+<div id="toast" class="toast"></div>
+
+<!-- 主业务逻辑 ESM 入口 -->
+<script type="module" src="/app.js"></script>
+
+</body>
+</html>
