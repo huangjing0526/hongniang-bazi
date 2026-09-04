@@ -1299,6 +1299,40 @@ export function selectBatchCase(index) {
 }
 
 /** 将命例数据载入并执行排盘 */
+/**
+ * 把快速录入区所有控件刷成 state.input 的当前值。
+ *
+ * 老师核盘时会先看输入区、再看盘。两者对不上——比如点了北京那条命例，盘按北京算了，
+ * 出生地框却还停在兰州——他核的就是错的对象，甚至可能报一个并不存在的「排错了」。
+ */
+function syncQuickInputForm() {
+  const pad = (n) => String(n).padStart(2, '0');
+  const { year, month, day, hour, minute, name, gender, cityName, longitude } = state.input;
+
+  const q12 = document.getElementById('quick-12-input');
+  if (q12) q12.value = `${year}${pad(month)}${pad(day)}${pad(hour)}${pad(minute)}`;
+
+  const preview = document.getElementById('quick-12-preview');
+  if (preview) {
+    preview.innerText = `✓ 识别为：${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}`;
+    preview.className = 'quick-preview valid';
+  }
+
+  const nameInput = document.getElementById('quick-name-input');
+  if (nameInput) nameInput.value = name ?? '';
+
+  const genderRadio = document.querySelector(`input[name="quick-gender"][value="${gender}"]`);
+  if (genderRadio) genderRadio.checked = true;
+
+  const cityInput = document.getElementById('city-search-input');
+  if (cityInput) cityInput.value = cityName ?? '';
+
+  const lngInput = document.getElementById('custom-lng-input');
+  if (lngInput) lngInput.value = longitude;
+
+  renderCityPrecisionHint(cityName);
+}
+
 function loadCaseToChart(c, index) {
   state.activeCaseIndex = index;
   state.input.name = c.name;
@@ -1307,13 +1341,7 @@ function loadCaseToChart(c, index) {
   state.input.longitude = c.longitude;
   Object.assign(state.input, c.parsedTime);
 
-  // 同步快速录入区界面值
-  const q12 = document.getElementById('quick-12-input');
-  if (q12 && c.parsedTime) {
-    const pad = (n) => String(n).padStart(2, '0');
-    q12.value = `${c.parsedTime.year}${pad(c.parsedTime.month)}${pad(c.parsedTime.day)}${pad(c.parsedTime.hour)}${pad(c.parsedTime.minute)}`;
-  }
-
+  syncQuickInputForm();
   runCompute();
   renderBatchList();
 }
