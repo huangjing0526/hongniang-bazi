@@ -1,0 +1,24 @@
+# systemd 单元，放到 /etc/systemd/system/hongniang-bazi.service
+# 启用：systemctl enable --now hongniang-bazi
+
+[Unit]
+Description=红娘八字排盘 · 同步服务
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/srv/hongniang-bazi
+ExecStart=/usr/bin/node cloud/server.mjs
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=8080
+# 数据库放在独立目录，方便单独备份
+Environment=DB_PATH=/srv/hongniang-bazi/data/hongniang-bazi.sqlite
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

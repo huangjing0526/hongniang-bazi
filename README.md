@@ -17,7 +17,46 @@ node web/server.js   # → http://localhost:5173
 | [engine/](engine/README.md) | 历法引擎：夏令时 / 真太阳时 / 子时两派 + 神煞 + 风险判据 + 审计。23 条回归 |
 | [docs/reviews/](docs/reviews/) | 2026-09-03 Grok / Codex / Antigravity 三方对抗审查、交叉裁决、问真实机验证 |
 
-## 部署（Cloudflare Workers + D1）
+## 部署 A：自有服务器（香港轻量，免备案）
+
+面向大陆老师的主用方案——`workers.dev` 在大陆被墙，Cloudflare 免费版也不稳。
+业务逻辑与 Worker 共用 `cloud/src/api.mjs`，数据库由 `cloud/src/d1-sqlite.mjs`
+用 `node:sqlite` 顶替 D1（只用到 prepare / bind / first / batch 四个接口）。
+
+需要 **Node 22+**（`node:sqlite` 内置）。
+
+```bash
+# 服务器上
+git clone <repo> /srv/hongniang-bazi && cd /srv/hongniang-bazi
+npm --prefix engine install      # 历法底座
+npm run build                    # 生成 dist/
+
+# 首次启动会自动建表（cloud/migrations/*.sql 逐个执行并记录）
+sudo cp deploy/hongniang-bazi.service /etc/systemd/system/
+sudo systemctl enable --now hongniang-bazi
+
+# HTTPS：改掉 Caddyfile 里的域名后
+sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+```
+
+**开一位老师**：
+
+```bash
+sudo -u www-data node -e "
+const {DatabaseSync}=require('node:sqlite');
+const db=new DatabaseSync('/srv/hongniang-bazi/data/hongniang-bazi.sqlite');
+db.prepare(\"INSERT INTO teachers (id,name,active,created_at) VALUES ('lz-wang','王老师',1,datetime('now'))\").run();
+"
+# 把 https://paipan.locxai.com/?t=lz-wang 发给他
+```
+
+**备份**：整个 `data/` 目录就是全部数据，`sqlite3 ... .backup` 或直接 cp（WAL 模式下建议用前者）。
+
+**本机跑一遍**：`npm start`（build + 起服务，默认 127.0.0.1:8080）
+
+---
+
+## 部署 B：Cloudflare Workers + D1
 
 老师用的线上版：`https://paipan.dsxzai.com`。排盘仍全在浏览器里算，服务端只负责发静态资源和收数据。
 

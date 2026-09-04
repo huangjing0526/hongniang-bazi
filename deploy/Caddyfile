@@ -1,0 +1,14 @@
+# Caddy 自动申请并续期 Let's Encrypt 证书，反代到本机 Node 进程。
+# 放到服务器 /etc/caddy/Caddyfile，改掉域名和邮箱即可。
+
+paipan.locxai.com {
+	encode gzip zstd
+
+	# lunar.js 约 665KB，压缩后能省不少，首屏慢的主要就是它
+	reverse_proxy 127.0.0.1:8080
+
+	log {
+		output file /var/log/caddy/hongniang-bazi.log
+		format json
+	}
+}

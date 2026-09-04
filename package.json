@@ -6,6 +6,8 @@
   "description": "红娘八字排盘 · 朱砂卷宗（Cloudflare Workers + D1）",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "serve": "node cloud/server.mjs",
+    "start": "npm run build && node cloud/server.mjs",
     "dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
     "db:migrate": "wrangler d1 migrations apply hongniang-bazi-db --remote",
