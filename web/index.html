@@ -940,10 +940,32 @@ body::before {
   border: 1px dashed var(--line);
 }
 .empty-sub { font-size: 12px; margin-top: 4px; color: var(--ink-5); }
+
+/* 引擎就绪前的遮罩。页面骨架里那份是占位盘，不遮住的话老师会当成真盘去核。 */
+#engine-loading {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: var(--desk);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+body.engine-loading #engine-loading { display: flex; }
+.loading-title {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  letter-spacing: .16em;
+  color: var(--cinnabar);
+}
+.loading-hint { font-size: 12px; color: var(--ink-5); }
 </style>
 
-<!-- 预先以经典脚本模式加载 lunar-javascript UMD 依赖包，保证其全局对象存在 -->
-<script src="/engine/node_modules/lunar-javascript/lunar.js"></script>
+<!-- lunar-javascript（425KB / gzip 109KB）不再阻塞解析：由 lunar-esm.js 按需注入。
+     这里只做 preload，让下载在解析时就开始，但不挡首屏渲染。 -->
+<link rel="preload" href="/engine/node_modules/lunar-javascript/lunar.js" as="script">
 
 <!-- ImportMap 映射：将引擎内部的 'lunar-javascript' 裸模块路径重定向到我们定制的 ESM 适配器 -->
 <script type="importmap">
@@ -955,7 +977,14 @@ body::before {
 </script>
 
 </head>
-<body>
+<body class="engine-loading">
+
+<!-- 引擎就绪前挡住占位盘，app.js 首次排盘完成后移除 body.engine-loading -->
+<div id="engine-loading">
+  <div class="loading-title">红 娘 排 盘</div>
+  <div class="loading-hint" id="engine-loading-hint">历法引擎加载中…</div>
+</div>
+
 <div class="sheet">
 
 <!-- 顶部导航栏 -->
@@ -1225,6 +1254,15 @@ Alanzhou 199608101203 兰州 坤造 出生证
 
 <!-- 主业务逻辑 ESM 入口 -->
 <script type="module" src="/app.js"></script>
+
+<!-- 引擎加载失败时 app.js 根本不会执行，遮罩会一直挂着。给个兜底提示。 -->
+<script>
+  setTimeout(function () {
+    if (!document.body.classList.contains('engine-loading')) return;
+    var hint = document.getElementById('engine-loading-hint');
+    if (hint) hint.textContent = '加载偏慢或网络受限，请刷新重试';
+  }, 15000);
+</script>
 
 </body>
 </html>

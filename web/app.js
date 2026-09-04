@@ -1480,7 +1480,10 @@ export function syncSect(sectValue) {
 // ============================================================================
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('DOMContentLoaded', async () => {
+  // 不能直接监听 DOMContentLoaded：lunar-esm.js 里有顶层 await，模块求值会被推迟到
+  // 该事件之后，那时再注册监听器就永远等不到了（整个初始化静默失效，页面上只剩骨架
+  // 里的占位盘，看着正常但按钮全是死的）。所以先看 readyState。
+  const boot = async () => {
     // 挂载全局方法到 window.app 供 HTML 事件调用
     window.app = {
       switchTab,
@@ -1553,6 +1556,15 @@ if (typeof window !== 'undefined') {
 
     // 运行初次排盘（默认 Alanzhou 黄金用例 1996-08-10 12:03）
     runCompute();
-  });
+
+    // 首盘已出，撤下遮罩——在这之前页面上是骨架里的占位盘，不能让老师看见
+    document.body.classList.remove('engine-loading');
+  };
+
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
 }
 

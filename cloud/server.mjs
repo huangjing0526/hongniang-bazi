@@ -41,18 +41,32 @@ function resolveAsset(pathname) {
   return path.join(DIST, 'index.html'); // 与 Workers 的 SPA 回落一致
 }
 
-function serveAsset(pathname, res) {
+function serveAsset(req, pathname, res) {
   const file = resolveAsset(pathname);
   if (!file || !fs.existsSync(file)) {
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('404 Not Found');
     return;
   }
+
+  // 文件名不带内容 hash，所以一律走协商缓存：每次带 If-Modified-Since 问一句，
+  // 没变就 304（几十字节）。用 max-age 会让改版后老师拿到新 index.html 配旧 app.js，
+  // 版本错配比多一次条件请求难查得多。
+  const stat = fs.statSync(file);
+  const lastModified = stat.mtime.toUTCString();
   const ext = path.extname(file).toLowerCase();
+
+  if (req.headers['if-modified-since'] === lastModified) {
+    res.writeHead(304, { 'cache-control': 'no-cache', 'last-modified': lastModified });
+    res.end();
+    return;
+  }
+
   res.writeHead(200, {
     'content-type': MIME[ext] || 'application/octet-stream',
-    // index.html 不缓存，否则改版后老师那边一直是旧的；其余带 hash 无关的静态短缓存
-    'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=3600',
+    'cache-control': 'no-cache',
+    'last-modified': lastModified,
+    'content-length': stat.size,
   });
   fs.createReadStream(file).pipe(res);
 }
@@ -75,7 +89,7 @@ const server = http.createServer(async (req, res) => {
     const { pathname } = new URL(req.url, 'http://localhost');
 
     if (!pathname.startsWith('/api/')) {
-      serveAsset(pathname, res);
+      serveAsset(req, pathname, res);
       return;
     }
 
