@@ -7,6 +7,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
 <style>
 :root {
+  /* 吸顶的 header + tab 栏实测 117px 高，再留 11px 余量。
+     裁定栏的吸顶位置与滚动落点都从这里取，改一处即可。 */
+  --sticky-top: 128px;
   --paper: #F6F1E8;
   --paper-2: #EFE8DB;
   --desk: #E4D9C8;
@@ -53,6 +56,35 @@ body::before {
   box-shadow: 0 0 0 1px #d2c6b4, 0 18px 50px rgba(28,25,22,.12);
   display: flex;
   flex-direction: column;
+}
+
+/* ---------------------------------------------------------------------------
+ * 宽屏。这一版是照手机做的（.sheet 卡死 460px），在电脑上就是屏幕正中一条窄带，
+ * 两侧全空，而十行五列的细盘挤在 460px 里。老师在电脑上核盘时这个宽度很吃亏。
+ *
+ * 两档：先把纸张放宽让细盘喘口气；再宽就把裁定卡片挪到右边吸顶跟随——
+ * 老师一边看盘一边留裁定，不用来回滚。窄屏一律不受影响。
+ * ------------------------------------------------------------------------- */
+@media (min-width: 760px) {
+  .sheet { max-width: 720px; }
+}
+
+@media (min-width: 1080px) {
+  .sheet { max-width: 1060px; }
+
+  #tab-chart.tab-pane.active {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    align-items: start;
+  }
+  /* 裁定卡片跟着盘一起滚，滚到顶就停在 tab 栏下面 */
+  #tab-chart > .verdict-box {
+    position: sticky;
+    top: var(--sticky-top);
+    margin-left: 0;
+    max-height: calc(100vh - var(--sticky-top) - 16px);
+    overflow-y: auto;
+  }
 }
 
 .main-header {
@@ -732,7 +764,7 @@ body::before {
 /* 老师裁定表单卡片（§13.2 / 优先级 4） */
 .verdict-box {
   /* 顶部 tab 栏是 sticky 的，滚过来时给它让出位置，别把标题压在下面 */
-  scroll-margin-top: 96px;
+  scroll-margin-top: var(--sticky-top);
   margin: 16px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -846,6 +878,43 @@ body::before {
   font-size: 12px;
 }
 .compare-confirm .radio-group { margin: 6px 0 10px; }
+
+/* 快速录入的两个动作：主按钮 + 清空 */
+.quick-actions { display: flex; gap: 8px; align-items: stretch; }
+.quick-actions .primary-btn { flex: 1; }
+.ghost-btn {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-3);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.quick-sample-hint {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: #fdf6e3;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.quick-sample-hint strong { color: var(--cinnabar); }
+
+/* 首屏那个内置样盘的标记 */
+.sample-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  color: var(--ink-5);
+  font-size: 11px;
+  font-weight: normal;
+}
 
 /* 出生地待确认条 */
 .city-confirm-bar {
@@ -1086,6 +1155,12 @@ body.engine-loading #engine-loading { display: flex; }
 
     <!-- 单个录入：12 位纯数字输入 -->
     <div id="input-mode-single" class="input-mode-pane active">
+    <!-- 表单里预填着示例数据。只改时间和姓名、忘了改出生地，盘就按兰州排出来了，
+         老师核的是错的对象。所以第一次打开时把这件事说破。 -->
+    <div id="quick-sample-hint" class="quick-sample-hint" style="display:none;">
+      下面填的是<strong>示例数据</strong>，方便您看格式。录自己的客户时
+      <strong>出生地也要一并改掉</strong>，或先点「清空重录」。
+    </div>
     <div class="card-box">
       <div class="card-title">
         <span>12 位数字速记录入</span>
@@ -1123,9 +1198,12 @@ body.engine-loading #engine-loading { display: flex; }
       </div>
       <div class="input-row">
         <label class="input-label" for="custom-lng-input">经度微调 (°E)</label>
-        <input type="number" id="custom-lng-input" class="text-input" step="0.001" value="103.825" onchange="window.app.selectCity(state.input.cityName, Number(this.value))">
+        <input type="number" id="custom-lng-input" class="text-input" step="0.001" value="103.825" onchange="window.app.setLongitude(this.value)">
       </div>
-      <button class="primary-btn" onclick="window.app.apply12DigitInput()">立即解析并排盘</button>
+      <div class="quick-actions">
+        <button class="primary-btn" onclick="window.app.apply12DigitInput()">立即解析并排盘</button>
+        <button type="button" class="ghost-btn" onclick="window.app.clearQuickInput()">清空重录</button>
+      </div>
     </div>
     </div>
 
@@ -1157,6 +1235,8 @@ Alanzhou 199608101203 兰州 坤造 出生证
 <!-- TAB 2: 基本排盘（核心细盘表格与当场裁定） -->
 <!-- ===================================================================== -->
 <div id="tab-chart" class="tab-pane active">
+  <!-- 盘这一栏。宽屏下它在左，裁定卡片在右侧吸顶跟随；窄屏下仍是上下叠着 -->
+  <div class="chart-main">
   <!-- 命主基本信息条 -->
   <div class="profile-card">
     <div class="avatar" id="profile-avatar">卯</div>
@@ -1198,6 +1278,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
 
   <!-- 细盘十行表格 -->
   <div class="chart-table" id="chart-table-body"></div>
+  </div><!-- .chart-main -->
 
   <!-- 老师结构化裁定卡片（§13.2 / 优先级 4） -->
   <div class="verdict-box" id="verdict-form-section">

@@ -72,6 +72,8 @@ const state = {
     sect: 1,                // 流派1: 子初换日; 2: 早晚子时
     timeFold: 'unknown',
   },
+  // 首屏那个内置样盘还挂着没被顶掉。为真时界面上要标「示例」，别让老师误当成真数据。
+  showingSample: true,
   // 引擎计算输出结果
   currentResult: null,
   activeChartIndex: 0,
@@ -140,6 +142,8 @@ const UNKNOWN_CITY = '未知地（按标准时）';
 
 const CASES_KEY = 'bazi_cases';
 const LEGACY_CASES_KEY = 'bazi_batch_cases';
+// 上次看的是哪一条命例。存 id 不存下标——删掉一条，后面的下标就全错位了。
+const ACTIVE_CASE_KEY = 'bazi_active_case';
 
 // 与 cloud/src/api.mjs 里 case.id / verdict.chartId 的 maxLength 对齐。
 // 前端超了这个长度，服务端会整批 400——两边任一处要改，另一处必须跟着改。
@@ -176,6 +180,7 @@ function caseIdOf(src) {
  * @returns {string} 命例 id
  */
 function upsertCaseFromInput() {
+  state.showingSample = false;
   const inp = state.input;
   const id = caseIdOf(inp);
   // raw 与 timeSource 只有批量粘贴才有，刻意不放进 fields——
@@ -206,6 +211,38 @@ function upsertCaseFromInput() {
   persistCases();
   renderBatchList();
   return id;
+}
+
+/**
+ * 决定老师打开时看到什么。
+ *
+ * 原来一律排出内置样盘 Alanzhou 并停在「基本排盘」页：第一次用的老师上来先看到
+ * 一个陌生人的盘，分不清那是样例还是别人留下的真数据；用过的老师刷新一次，
+ * 自己刚录的盘也没了，又回到 Alanzhou。
+ *
+ * 现在：录过盘就接着上次那条；没录过就落在「快速录入」，样盘只当占位并明确标出。
+ */
+function restoreLastCase() {
+  let lastId = null;
+  try {
+    lastId = localStorage.getItem(ACTIVE_CASE_KEY);
+  } catch (e) {
+    console.error('读取上次命例失败，退回默认首屏:', e);
+  }
+
+  const idx = state.cases.findIndex((c) => c.id === lastId && c.parsedTime);
+  const fallback = state.cases.findIndex((c) => c.parsedTime);
+  const target = idx >= 0 ? idx : fallback;
+
+  if (target >= 0) {
+    // 只装载状态不排盘——boot 紧接着就会 runCompute，别白算一遍
+    applyCaseToInput(state.cases[target], target);
+    return;
+  }
+
+  // 一条命例都没有：样盘只是占位，别让它冒充老师自己的数据
+  state.showingSample = true;
+  switchTab('quick');
 }
 
 /** 从 localStorage 读取持久化数据 */
@@ -247,6 +284,9 @@ function loadPersistedData() {
 function persistCases() {
   try {
     localStorage.setItem(CASES_KEY, JSON.stringify(state.cases));
+    const active = state.cases[state.activeCaseIndex];
+    if (active) localStorage.setItem(ACTIVE_CASE_KEY, active.id);
+    else localStorage.removeItem(ACTIVE_CASE_KEY);
   } catch (e) {
     console.error('保存命例至 localStorage 失败:', e);
   }
@@ -618,10 +658,14 @@ function renderProfile() {
   const avatarEl = document.getElementById('profile-avatar');
   if (avatarEl) avatarEl.innerText = dayZhi;
 
+  const hintEl = document.getElementById('quick-sample-hint');
+  if (hintEl) hintEl.style.display = state.showingSample ? 'block' : 'none';
+
   const nameRowEl = document.getElementById('profile-name-row');
   if (nameRowEl) {
     const sealText = state.input.gender === 'female' ? '坤' : '乾';
-    nameRowEl.innerHTML = `${escapeHtml(state.input.name)} <span class="seal">${sealText}</span>`;
+    const sample = state.showingSample ? ' <span class="sample-tag">示例盘</span>' : '';
+    nameRowEl.innerHTML = `${escapeHtml(state.input.name)} <span class="seal">${sealText}</span>${sample}`;
   }
 
   const lunarRowEl = document.getElementById('profile-lunar-row');
@@ -1375,6 +1419,10 @@ export function switchTab(tabId) {
   const pane = document.getElementById(`tab-${tabId}`);
   if (pane) pane.classList.add('active');
 
+  // 回到顶部。不然从盘底部切到「快速录入」，那一页顶上的
+  // 「单个录入 / 批量录入」切换正好被吸顶的 tab 栏挡住，老师看不见它。
+  window.scrollTo(0, 0);
+
   if (tabId === 'verdicts') {
     renderVerdictsList();
   } else if (tabId === 'compare') {
@@ -1570,6 +1618,55 @@ export function selectCity(name, lng) {
   showToast(`已选择城市：${name} (${lng}°E)`);
 }
 
+/** 老师手动微调经度。出生地名保持不变，只换经度。 */
+export function setLongitude(value) {
+  const lng = Number(value);
+  if (!Number.isFinite(lng)) {
+    showToast('经度要填数字，如 116.4');
+    return;
+  }
+  state.input.longitude = lng;
+  state.input.cityKnown = true;   // 手填的经度是明确指定，不算「出生地未落实」
+  runCompute();
+}
+
+/**
+ * 清空快速录入，准备录下一位客户。
+ *
+ * 表单原来一直带着上一条的姓名与出生地，换个客户要逐个字段删；
+ * 更坏的是漏删出生地时，盘会按上一位客户的地方排出来，老师核的是错的对象。
+ */
+export function clearQuickInput() {
+  state.showingSample = false;
+  state.activeCaseIndex = -1;
+  Object.assign(state.input, {
+    name: '',
+    cityName: '',
+    longitude: 120,
+    cityKnown: false,   // 没填出生地，引擎会报 CITY_UNKNOWN，别让它悄悄按 120 度算
+  });
+
+  for (const id of ['quick-12-input', 'quick-name-input', 'city-search-input']) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  }
+  const lng = document.getElementById('custom-lng-input');
+  if (lng) lng.value = 120;
+  const preview = document.getElementById('quick-12-preview');
+  if (preview) { preview.innerText = ''; preview.className = 'quick-preview'; }
+  renderCityPrecisionHint('');
+  renderBatchList();
+  const hint = document.getElementById('quick-sample-hint');
+  if (hint) hint.style.display = 'none';
+
+  // 重排，让盘跟上被清空的输入。不排的话表单是空的、盘还是上一位客户的，
+  // 老师切到「基本排盘」核的就是错的对象（见 syncQuickInputForm 的注释）。
+  runCompute();
+
+  document.getElementById('quick-12-input')?.focus();
+  showToast('已清空，可以录下一位了');
+}
+
 /** 批量解析文本 */
 export async function applyBatchInput() {
   const textEl = document.getElementById('batch-textarea');
@@ -1690,7 +1787,21 @@ export function selectBatchCase(index) {
   switchTab('chart');
 }
 
-/** 将命例数据载入并执行排盘 */
+/**
+ * 把一条命例装载进当前输入。不排盘——调用方自己决定什么时候排。
+ */
+function applyCaseToInput(c, index) {
+  state.showingSample = false;
+  state.activeCaseIndex = index;
+  state.input.name = c.name;
+  state.input.gender = c.gender;
+  state.input.cityName = c.cityName;
+  state.input.longitude = c.longitude;
+  state.input.cityKnown = c.cityKnown !== false;
+  Object.assign(state.input, c.parsedTime);
+  syncQuickInputForm();
+}
+
 /**
  * 把快速录入区所有控件刷成 state.input 的当前值。
  *
@@ -1726,16 +1837,8 @@ function syncQuickInputForm() {
 }
 
 function loadCaseToChart(c, index) {
-  state.activeCaseIndex = index;
-  state.input.name = c.name;
-  state.input.gender = c.gender;
-  state.input.cityName = c.cityName;
-  state.input.longitude = c.longitude;
-  state.input.cityKnown = c.cityKnown !== false;
   comparePendingSide = null;
-  Object.assign(state.input, c.parsedTime);
-
-  syncQuickInputForm();
+  applyCaseToInput(c, index);
   runCompute();
   renderBatchList();
 }
@@ -1978,7 +2081,9 @@ if (typeof window !== 'undefined') {
       apply12DigitInput,
       onCitySearchInput,
       selectCity,
+      setLongitude,
       confirmCaseCity,
+      clearQuickInput,
       applyBatchInput,
       loadSampleCases,
       clearBatchCases,
@@ -2044,8 +2149,7 @@ if (typeof window !== 'undefined') {
     }
 
     fillGanZhiSelects();
-
-    // 运行初次排盘（默认 Alanzhou 黄金用例 1996-08-10 12:03）
+    restoreLastCase();
     runCompute();
 
     // 首盘已出，撤下遮罩——在这之前页面上是骨架里的占位盘，不能让老师看见
