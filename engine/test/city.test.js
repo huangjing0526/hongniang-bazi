@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { lookupCity } from '../src/city.js';
+import { lookupCity, resolveCity } from '../src/city.js';
 import cities from '../data/cities.json' with { type: 'json' };
 
 // 断言查询行为与数据完整性，不锁具体坐标——换数据源不该让测试变红。
@@ -33,4 +33,22 @@ test('真太阳时关键城市 · 经度量级正确（西部必须显著小于 
   assert.ok(at('乌鲁木齐市') < 90, '乌鲁木齐经度应在 90 以下');
   assert.ok(at('甘肃省 兰州市') < 106, '兰州经度应在 106 以下');
   assert.ok(Math.abs(at('浙江省 杭州市 上城区') - 120) < 1, '杭州上城区应贴近 120 度线');
+});
+
+test('加权排序 · 直辖市同名区排在外省同名市之前', () => {
+  // 「朝阳」命中 10 条，北京朝阳区在数据里排最后一条。老师搜朝阳要的多半是它，
+  // 排序坏掉时它会被下拉的条数上限截掉，等于搜不到。
+  assert.equal(lookupCity('朝阳')[0].name, '北京市 北京市 朝阳区');
+  assert.equal(lookupCity('浦东')[0].name, '上海市 上海市 浦东新区');
+});
+
+test('resolveCity · 跨省同名才算歧义，独苗与同省父子不算', () => {
+  assert.equal(resolveCity('朝阳').ambiguous, true, '朝阳跨北京/辽宁/吉林，必须让人来选');
+  assert.equal(resolveCity('兰州').ambiguous, false, '兰州市与其下辖区县同属甘肃，不算歧义');
+  assert.equal(resolveCity('北京').ambiguous, false);
+  assert.equal(resolveCity('浦东').ambiguous, false, '只有一条候选，无从歧义');
+
+  const none = resolveCity('并不存在的地名');
+  assert.equal(none.city, null);
+  assert.equal(none.ambiguous, false, '查不到是「未知」，不是「歧义」，两者处理方式不同');
 });
