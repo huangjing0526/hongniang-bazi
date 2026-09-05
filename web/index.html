@@ -77,12 +77,20 @@ body::before {
     grid-template-columns: minmax(0, 1fr) 380px;
     align-items: start;
   }
-  /* 裁定卡片跟着盘一起滚，滚到顶就停在 tab 栏下面 */
+  /* 裁定卡片跟着盘一起滚，滚到顶就停在 tab 栏下面。
+   *
+   * 高度这里要留够两截余量，否则滚到页面最底时卡片会被顶出吸顶位、标题缩进 tab 栏
+   * 底下。推导：卡片能粘住的条件是「卡片高 + 吸顶偏移 + 页脚高 <= 视口高」。
+   * 页脚在 .sheet 之外、不进网格，所以只能从卡片高度上让出这一段（80px 够放下
+   * 那行数据来源说明）。
+   *
+   * 试过给左栏加 padding-bottom 来撑长 sticky 的活动范围——没用：那会同时抬高
+   * 容器底和文档总高，两边抵消，纯属安慰剂。留个记号，别再往那个方向修。 */
   #tab-chart > .verdict-box {
     position: sticky;
     top: var(--sticky-top);
     margin-left: 0;
-    max-height: calc(100vh - var(--sticky-top) - 16px);
+    max-height: calc(100vh - var(--sticky-top) - 80px);
     overflow-y: auto;
   }
 }

@@ -7,6 +7,7 @@
 const JSON_BODY_LIMIT = 1024 * 1024; // 1MB，几百条命例远远用不到
 const MAX_CASES = 2000;
 const MAX_VERDICTS = 2000;
+const MAX_RETIRED = 2000;
 const MAX_TEXT = 2000;
 
 class ApiError extends Error {
@@ -141,10 +142,28 @@ function verdictStatement(env, teacherId, item, now) {
   );
 }
 
+/** 按老师端点名删除。只删它明确报上来的 id，绝不按「这次没推上来」反推。 */
+function deleteStatements(env, teacherId, table, ids) {
+  if (table !== 'cases' && table !== 'verdicts') throw new Error(`表名不在白名单：${table}`);
+  return ids.map((id) => {
+    if (typeof id !== 'string' || !id || id.length > 200) {
+      throw new ApiError(400, 4009, '待删除 id 格式不正确');
+    }
+    return env.DB.prepare(`DELETE FROM ${table} WHERE teacher_id = ? AND id = ?`).bind(teacherId, id);
+  });
+}
+
 /**
  * 全量推送。老师端把本地全部命例与裁定一并送上来，服务端按主键 upsert。
  * 量级只有几百条，全量比增量少一个「同步游标」的状态机，也天然自愈——
  * 中间丢过的任何一次同步，下一次就补回来了。
+ *
+ * 但 upsert 只增不减：老师在本机点了删除，这边那行还留着，他删的等于没删；
+ * 改选出生地会换 case id，也会在这边留下旧 id 的孤儿行。所以另收一份
+ * retiredCases / retiredVerdicts——老师**点名**要删的 id。
+ *
+ * 为什么不让服务端拿「这次全量推送里没有的都删掉」去反推：老师可能在手机和电脑
+ * 各开一份，两台设备的本地记录不一样，反推会让一台的推送删掉另一台刚录的东西。
  */
 async function handleSync(request, env) {
   const teacher = await authenticate(request, env);
@@ -152,11 +171,20 @@ async function handleSync(request, env) {
 
   const cases = Array.isArray(body.cases) ? body.cases : [];
   const verdicts = Array.isArray(body.verdicts) ? body.verdicts : [];
+  const retiredCases = Array.isArray(body.retiredCases) ? body.retiredCases : [];
+  const retiredVerdicts = Array.isArray(body.retiredVerdicts) ? body.retiredVerdicts : [];
   if (cases.length > MAX_CASES) throw new ApiError(400, 4007, `命例数量超出上限（${MAX_CASES}）`);
   if (verdicts.length > MAX_VERDICTS) throw new ApiError(400, 4008, `裁定数量超出上限（${MAX_VERDICTS}）`);
+  if (retiredCases.length + retiredVerdicts.length > MAX_RETIRED) {
+    throw new ApiError(400, 4010, `待删除数量超出上限（${MAX_RETIRED}）`);
+  }
 
   const now = new Date().toISOString();
+  // 删除排在写入前面：万一同一个 id 既在退役名单里又在本次推送里
+  //（删掉又重录），先删后写才是老师想要的结果。
   const statements = [
+    ...deleteStatements(env, teacher.id, 'cases', retiredCases),
+    ...deleteStatements(env, teacher.id, 'verdicts', retiredVerdicts),
     ...cases.map((item) => caseStatement(env, teacher.id, item, now)),
     ...verdicts.map((item) => verdictStatement(env, teacher.id, item, now)),
     env.DB.prepare('UPDATE teachers SET last_seen_at = ? WHERE id = ?').bind(now, teacher.id),
@@ -169,12 +197,18 @@ async function handleSync(request, env) {
     console.error(JSON.stringify({
       action: 'sync', teacherId: teacher.id,
       cases: cases.length, verdicts: verdicts.length,
+      retiredCases: retiredCases.length, retiredVerdicts: retiredVerdicts.length,
       error: String(err && err.message ? err.message : err),
     }));
     throw new ApiError(500, 5001, '保存失败，您的记录仍在本机保存，稍后会自动重试');
   }
 
-  return ok({ cases: cases.length, verdicts: verdicts.length, syncedAt: now });
+  return ok({
+    cases: cases.length,
+    verdicts: verdicts.length,
+    retired: retiredCases.length + retiredVerdicts.length,
+    syncedAt: now,
+  });
 }
 
 async function handleMe(request, env) {

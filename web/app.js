@@ -83,6 +83,14 @@ const state = {
   activeCaseIndex: -1,
   // 历史裁定记录
   verdicts: [],
+  // 老师在本机删掉的命例与裁定的 id。
+  //
+  // 同步是「全量推送 + 按主键 upsert」，只增不减：老师点了删除，本机没了，
+  // 服务端那行还在——他删的等于没删。改选出生地会换 id，也会在服务端留下旧 id 的孤儿行。
+  //
+  // 用一份显式的退役名单，而不是让服务端拿「这次没推上来的都删掉」去反推：
+  // 老师可能在手机和电脑上各开一份，反推会让一台设备的推送删掉另一台的记录。
+  retired: { cases: [], verdicts: [] },
   // 城市检索缓存
   cities: [],
   lookupCityFn: null,
@@ -144,6 +152,8 @@ const CASES_KEY = 'bazi_cases';
 const LEGACY_CASES_KEY = 'bazi_batch_cases';
 // 上次看的是哪一条命例。存 id 不存下标——删掉一条，后面的下标就全错位了。
 const ACTIVE_CASE_KEY = 'bazi_active_case';
+// 已在本机删掉、但可能还留在服务端的 id。
+const RETIRED_KEY = 'bazi_retired';
 
 // 与 cloud/src/api.mjs 里 case.id / verdict.chartId 的 maxLength 对齐。
 // 前端超了这个长度，服务端会整批 400——两边任一处要改，另一处必须跟着改。
@@ -258,6 +268,15 @@ function loadPersistedData() {
       }
       if (backfilled) localStorage.setItem('bazi_verdicts', JSON.stringify(state.verdicts));
     }
+    const savedRetired = localStorage.getItem(RETIRED_KEY);
+    if (savedRetired) {
+      const parsed = JSON.parse(savedRetired);
+      state.retired = {
+        cases: Array.isArray(parsed.cases) ? parsed.cases : [],
+        verdicts: Array.isArray(parsed.verdicts) ? parsed.verdicts : [],
+      };
+    }
+
     // bazi_batch_cases 是只装批量命例的旧键；老师浏览器里可能还留着，读进来后改存新键
     const saved = localStorage.getItem(CASES_KEY);
     const fromLegacy = saved === null;
@@ -278,6 +297,31 @@ function loadPersistedData() {
   } catch (e) {
     console.error('读取 localStorage 失败:', e);
   }
+}
+
+/**
+ * 记下「这些 id 已经不要了」，下次同步时告诉服务端删掉。
+ * @param {'cases'|'verdicts'} kind
+ * @param {string[]} ids
+ */
+function retire(kind, ids) {
+  const fresh = ids.filter((id) => id && !state.retired[kind].includes(id));
+  if (fresh.length === 0) return;
+  state.retired[kind] = state.retired[kind].concat(fresh);
+
+  // 服务端对这份名单有上限（MAX_RETIRED）。本机模式下攒的名单永远送不出去，
+  // 一直涨就会在老师拿到邀请码后把每次同步都顶成 400，从此再也同步不上。
+  // 超了就丢最早的：那几行留在服务端不会怎样，同步断掉才是大事。
+  const CAP = 2000;
+  const total = state.retired.cases.length + state.retired.verdicts.length;
+  if (total > CAP) state.retired[kind] = state.retired[kind].slice(-(CAP / 2));
+
+  try {
+    localStorage.setItem(RETIRED_KEY, JSON.stringify(state.retired));
+  } catch (e) {
+    console.error('保存退役名单至 localStorage 失败:', e);
+  }
+  scheduleSync();
 }
 
 /** 保存命例至 localStorage */
@@ -364,16 +408,34 @@ async function runSync() {
   renderSyncStatus();
 
   try {
+    // 快照这一批送出去的退役 id。请求飞在路上时老师可能又删了几条，
+    // 成功后只能清掉确认送达的这些，不能整个清空。
+    const sentRetired = { cases: [...state.retired.cases], verdicts: [...state.retired.verdicts] };
+
     const resp = await fetch('/api/sync', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-teacher-token': state.teacher.token },
-      body: JSON.stringify({ cases: state.cases, verdicts: state.verdicts }),
+      body: JSON.stringify({
+        cases: state.cases,
+        verdicts: state.verdicts,
+        retiredCases: sentRetired.cases,
+        retiredVerdicts: sentRetired.verdicts,
+      }),
     });
     const body = await resp.json().catch(() => null);
 
     if (!resp.ok || !body || body.code !== 0) {
       const message = (body && body.message) || `同步失败（HTTP ${resp.status}）`;
       throw new Error(message);
+    }
+
+    for (const kind of ['cases', 'verdicts']) {
+      state.retired[kind] = state.retired[kind].filter((id) => !sentRetired[kind].includes(id));
+    }
+    try {
+      localStorage.setItem(RETIRED_KEY, JSON.stringify(state.retired));
+    } catch (e) {
+      console.error('清理退役名单失败，下次同步会重复上报（服务端幂等，无副作用）:', e);
     }
 
     state.sync.status = 'ok';
@@ -785,6 +847,7 @@ export function confirmCaseCity(name, lng) {
         if (v.chartId === oldId) v.chartId = c.id;
       }
       persistVerdicts();
+      retire('cases', [oldId]);   // 旧 id 那行本机已经没有了，服务端也别留着
     }
 
     persistCases();
@@ -1731,9 +1794,13 @@ export async function applyBatchInput() {
 
 /** 删除批量列表中的单条命例 */
 export function removeBatchCase(index) {
-  if (!state.cases[index]) return;
+  const removed = state.cases[index];
+  if (!removed) return;
 
   state.cases.splice(index, 1);
+  // 只退役命例，不连带删它的裁定：裁定自带 ourGanZhi / options / cityName 快照，
+  // 命例没了照样分析得动，而那是老师留给我们的东西。要清裁定有「清空记录」。
+  retire('cases', [removed.id]);
   // 删掉当前排盘那条则取消高亮，删掉它前面的则整体前移一位
   if (index === state.activeCaseIndex) {
     state.activeCaseIndex = -1;
@@ -1749,6 +1816,7 @@ export function removeBatchCase(index) {
 export function clearBatchCases() {
   if (state.cases.length === 0) return;
   if (!confirm('确定清空批量命例列表吗？此操作不可恢复！')) return;
+  retire('cases', state.cases.map((c) => c.id));
   state.cases = [];
   state.activeCaseIndex = -1;
   persistCases();
@@ -2013,7 +2081,8 @@ export function exportVerdictsJson() {
 /** 删除单条裁定 */
 export function deleteVerdict(index) {
   if (!confirm('确定删除该条裁定吗？')) return;
-  state.verdicts.splice(index, 1);
+  const [removed] = state.verdicts.splice(index, 1);
+  if (removed) retire('verdicts', [removed.id]);
   persistVerdicts();
   renderVerdictsList();
   showToast('已删除裁定');
@@ -2023,6 +2092,7 @@ export function deleteVerdict(index) {
 export function clearAllVerdicts() {
   if (state.verdicts.length === 0) return;
   if (!confirm('确定清空所有本地保存的裁定吗？此操作不可恢复！')) return;
+  retire('verdicts', state.verdicts.map((v) => v.id));
   state.verdicts = [];
   persistVerdicts();
   renderVerdictsList();
