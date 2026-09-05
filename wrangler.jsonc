@@ -4,11 +4,10 @@
   "main": "cloud/src/index.mjs",
   "compatibility_date": "2026-05-28",
 
-  // 自定义域名待定：dsxzai.com 不在当前账号（e6193477…）下，locxai.com 尚未生效（pending）。
-  // zone 可用后把下面这段解开，pattern 换成实际域名，再 npm run deploy 即可。
-  // "routes": [
-  //   { "pattern": "paipan.locxai.com", "custom_domain": true }
-  // ],
+  // paipan.locxai.com 已归自有服务器（47.76.95.3，nginx + Node，见 deploy/install.sh）。
+  // 这里**不要**再绑该域名，否则一旦 locxai.com 的 NS 迁到 Cloudflare，
+  // Worker 会把这个域名从 nginx 手里抢走。
+  // 本 Worker 现在只作备用入口，走 workers.dev。
   "workers_dev": true,
 
   // 只发布 scripts/build.mjs 组装出来的 dist/。
