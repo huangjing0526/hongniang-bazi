@@ -1,7 +1,9 @@
-// 用 node:sqlite 顶替 D1，让 cloud/src/api.mjs 在自有服务器上原样跑。
+// cloud/src/api.mjs 的数据库层，用 node:sqlite 实现。
 //
-// Worker 里只用到 D1 的四个接口：prepare / bind / first / batch。这里照着实现，
-// 不多不少——接口面越小，两个运行时行为跑偏的可能就越小。
+// 只暴露四个接口：prepare / bind / first / batch。这个形状是从 Cloudflare D1 来的
+// ——早先同一份 api.mjs 要在 Worker 和自有服务器上都能跑。Worker 那条线已移除
+// （见 api.mjs 顶部），形状保留：不多不少四个方法，换实现时要对齐的东西最少。
+// 类名里的 D1 是这段来历的痕迹，不代表还有 Cloudflare 的依赖。
 
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';

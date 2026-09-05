@@ -1,8 +1,11 @@
-// 同步接口的业务逻辑，Cloudflare Worker 与自有服务器共用这一份。
+// 同步接口的业务逻辑。
 //
-// 全程只用 Web 标准的 Request/Response（Node 18+ 自带），所以两个运行时都能直接跑；
-// 数据库那头只用到 D1 的四个接口（prepare / bind / first / batch），自有服务器上
-// 由 d1-sqlite.mjs 用 node:sqlite 顶上。
+// 全程只用 Web 标准的 Request/Response（Node 18+ 自带），数据库那头只用四个接口
+// （prepare / bind / first / batch），由 d1-sqlite.mjs 用 node:sqlite 提供。
+//
+// 这两条约束原本是为了让同一份代码在 Cloudflare Worker 和自有服务器上都能跑。
+// Worker 那条线已于 2026-09-05 移除（workers.dev 在大陆被墙，老师打不开），
+// 但约束本身留着：接口面越小，将来换运行时或换库越不容易踩坑。
 
 const JSON_BODY_LIMIT = 1024 * 1024; // 1MB，几百条命例远远用不到
 const MAX_CASES = 2000;

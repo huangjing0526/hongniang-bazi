@@ -3,18 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "红娘八字排盘 · 朱砂卷宗（Cloudflare Workers + D1）",
+  "description": "红娘八字排盘 · 朱砂卷宗（自有服务器 + node:sqlite）",
   "scripts": {
     "build": "node scripts/build.mjs",
     "serve": "node cloud/server.mjs",
     "start": "npm run build && node cloud/server.mjs",
-    "dev": "npm run build && wrangler dev",
-    "deploy": "npm run build && wrangler deploy",
-    "db:migrate": "wrangler d1 migrations apply hongniang-bazi-db --remote",
-    "db:migrate:local": "wrangler d1 migrations apply hongniang-bazi-db --local",
     "test": "npm --prefix engine test"
-  },
-  "devDependencies": {
-    "wrangler": "^4.94.0"
   }
 }
