@@ -95,9 +95,10 @@ const state = {
   cities: [],
   lookupCityFn: null,
   resolveCityFn: null,
-  // 云端同步（无邀请码时全程不联网，保持本机模式）
+  // 云端同步。没登记过就是 'unregistered'——全程不联网，等老师自己点状态条填称呼；
+  // 他也可以一直不填，那就退回 'local' 本机模式，记录只留在这台电脑上。
   teacher: { token: '', name: '' },
-  sync: { status: 'local', lastError: '', lastSyncedAt: '' },
+  sync: { status: 'unregistered', lastError: '', lastSyncedAt: '' },
 };
 
 // ============================================================================
@@ -154,6 +155,16 @@ const LEGACY_CASES_KEY = 'bazi_batch_cases';
 const ACTIVE_CASE_KEY = 'bazi_active_case';
 // 已在本机删掉、但可能还留在服务端的 id。
 const RETIRED_KEY = 'bazi_retired';
+const TOKEN_KEY = 'bazi_teacher_token';
+// 与 cloud/src/api.mjs 里的 MAX_NAME 对齐，改一边要同时改另一边
+// （index.html 那个输入框的 maxlength 也是这个数）。
+const TEACHER_NAME_MAX = 32;
+// 登记时填的称呼。存一份是为了刷新后状态条立刻能显示名字，不必等 /api/me 回来。
+const TEACHER_NAME_KEY = 'bazi_teacher_name';
+// 老师明确选了「只在本机用」。存了它就不再催他登记，否则每次刷新都催一遍。
+// 只在**没有身份**时才读得到（有 token 时走的是同步状态那条线），所以拿到 token 时不必清它，
+// 清理集中在 signOutTeacher 一处。
+const LOCAL_ONLY_KEY = 'bazi_local_only';
 
 // 与 cloud/src/api.mjs 里 case.id / verdict.chartId 的 maxLength 对齐。
 // 前端超了这个长度，服务端会整批 400——两边任一处要改，另一处必须跟着改。
@@ -373,34 +384,146 @@ function newId() {
  */
 function initTeacherToken() {
   let token = '';
+  let localOnly = false;
   try {
     const url = new URL(window.location.href);
     const fromUrl = url.searchParams.get('t');
     if (fromUrl && fromUrl.trim()) {
       token = fromUrl.trim();
-      localStorage.setItem('bazi_teacher_token', token);
+      localStorage.setItem(TOKEN_KEY, token);
+      // 链接里的邀请码换了个人，本机存的名字就不是他的了，清掉等 /api/me 回填
+      localStorage.removeItem(TEACHER_NAME_KEY);
       url.searchParams.delete('t');
       window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     } else {
-      token = localStorage.getItem('bazi_teacher_token') || '';
+      token = localStorage.getItem(TOKEN_KEY) || '';
     }
+    state.teacher.name = localStorage.getItem(TEACHER_NAME_KEY) || '';
+    localOnly = localStorage.getItem(LOCAL_ONLY_KEY) === '1';
   } catch (e) {
     console.error('读取邀请码失败:', e);
   }
   state.teacher.token = token;
-  state.sync.status = token ? 'idle' : 'local';
+  if (token) state.sync.status = 'idle';
+  else state.sync.status = localOnly ? 'local' : 'unregistered';
+}
+
+/**
+ * 自助登记：填个称呼，服务端现发一个邀请码。
+ *
+ * 名字只是标签，凭据是服务端发的随机串——同名的两次登记是两份互不相干的数据。
+ * 所以换设备不能靠「再填一遍同样的名字」，得用登记后给出的专属链接。
+ *
+ * @param {string} name 老师填的称呼
+ * @returns {Promise<{ok: boolean, message?: string}>}
+ */
+async function registerTeacher(name) {
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return { ok: false, message: '请填写您的称呼' };
+  if (trimmed.length > TEACHER_NAME_MAX) {
+    return { ok: false, message: `称呼请控制在 ${TEACHER_NAME_MAX} 字以内` };
+  }
+
+  // 失败要原样退回来。反推退回哪个状态是错的：老师从「本机模式」点进来登记失败，
+  // 反推会把他丢到「未登记」，而 localStorage 里的本机模式标记还在，刷新一下又变回去。
+  const prevStatus = state.sync.status;
+  state.sync.status = 'registering';
+  renderSyncStatus();
+
+  try {
+    const resp = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    const body = await resp.json().catch(() => null);
+    if (!resp.ok || !body || body.code !== 0 || !body.data || !body.data.token) {
+      throw new Error((body && body.message) || `登记失败（HTTP ${resp.status}）`);
+    }
+
+    state.teacher.token = body.data.token;
+    state.teacher.name = body.data.name || trimmed;
+    state.sync.status = 'idle';
+    state.sync.lastError = '';
+    persist(TOKEN_KEY, state.teacher.token, '保存邀请码失败，刷新后需要重新登记');
+    persist(TEACHER_NAME_KEY, state.teacher.name, '保存称呼失败，刷新后要等接口回来才显示名字');
+    renderSyncStatus();
+    runSync();
+    return { ok: true };
+  } catch (err) {
+    console.error('登记失败:', err);
+    state.sync.status = prevStatus;   // 别把老师卡在「登记中…」
+    state.sync.lastError = String(err && err.message ? err.message : err);
+    renderSyncStatus();
+    return { ok: false, message: state.sync.lastError };
+  }
+}
+
+/** 老师选了「只在本机用」。记下来，不再催他登记。 */
+function stayLocalOnly() {
+  state.sync.status = 'local';
+  persist(LOCAL_ONLY_KEY, '1', '保存本机模式偏好失败，下次打开会再问一次');
+  renderSyncStatus();
+}
+
+/**
+ * 退出当前身份，回到未登记。
+ * **只清身份，不动本机的命例与裁定**——老师换个名字重来，盘还得在。
+ * 那些记录已经同步上去的那份留在服务端原样不动，属于上一位登记者。
+ */
+function signOutTeacher() {
+  state.teacher = { token: '', name: '' };
+  state.sync = { status: 'unregistered', lastError: '', lastSyncedAt: '' };
+  for (const key of [TOKEN_KEY, TEACHER_NAME_KEY, LOCAL_ONLY_KEY]) {
+    persist(key, null, `清除 ${key} 失败，刷新后可能回到刚退出的那个身份`);
+  }
+  renderSyncStatus();
+}
+
+/**
+ * 邀请码被服务端拒了（吊销、或链接抄漏了几位）。
+ *
+ * **本机的 token 不清掉**，但要说清这买到的是什么：仅仅是「下次打开再试一遍」——
+ * 服务端一时抽风时，刷新后 fetchTeacherName 会重新校验并恢复，老师什么都不用做。
+ * 它换不来更多：老师一旦按提示重新登记，新 token 就把旧的盖掉了，这是他自己的选择。
+ *
+ * 状态标成 invalid 之后，canSync() 会拦住后续所有自动重试。
+ */
+function markTokenInvalid(message) {
+  state.sync.status = 'invalid';
+  state.sync.lastError = message;
+  renderSyncStatus();
+}
+
+/** 写 localStorage。存不下不该中断流程，但也绝不静默——每处都要留下自己的后果说明。 */
+function persist(key, value, consequence) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch (e) {
+    console.error(`${consequence}:`, e);
+  }
+}
+
+/**
+ * 现在能不能往服务端发东西。**发请求的每条路径都问这一处**——
+ * 守卫放在防抖层挡不住 online 事件那条路，失效的邀请码会每次断线重连都白发一次全量推送。
+ */
+function canSync() {
+  // 失效的邀请码重试多少次都是 403，只会白构造几千条记录的 JSON 再把控制台刷满
+  return Boolean(state.teacher.token) && state.sync.status !== 'invalid';
 }
 
 /** 攒一下再发，避免连点几次裁定就打几次请求 */
 function scheduleSync() {
-  if (!state.teacher.token) return;
+  if (!canSync()) return;
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => { syncTimer = null; runSync(); }, SYNC_DEBOUNCE_MS);
 }
 
 /** 全量推送本地命例与裁定；服务端按主键 upsert，重复推送无副作用 */
 async function runSync() {
-  if (!state.teacher.token) return;
+  if (!canSync()) return;
   if (syncing) { syncQueuedAgain = true; return; }
 
   syncing = true;
@@ -424,6 +547,12 @@ async function runSync() {
     });
     const body = await resp.json().catch(() => null);
 
+    if (resp.status === 401 || resp.status === 403) {
+      // 邀请码没了。这跟「网络不好」是两回事：重试一万次也不会好，
+      // 得让老师看见「重新登记」，而不是永远挂着一句「稍后重试」。
+      markTokenInvalid((body && body.message) || '邀请码已失效');
+      return;
+    }
     if (!resp.ok || !body || body.code !== 0) {
       const message = (body && body.message) || `同步失败（HTTP ${resp.status}）`;
       throw new Error(message);
@@ -432,11 +561,8 @@ async function runSync() {
     for (const kind of ['cases', 'verdicts']) {
       state.retired[kind] = state.retired[kind].filter((id) => !sentRetired[kind].includes(id));
     }
-    try {
-      localStorage.setItem(RETIRED_KEY, JSON.stringify(state.retired));
-    } catch (e) {
-      console.error('清理退役名单失败，下次同步会重复上报（服务端幂等，无副作用）:', e);
-    }
+    persist(RETIRED_KEY, JSON.stringify(state.retired),
+      '清理退役名单失败，下次同步会重复上报（服务端幂等，无副作用）');
 
     state.sync.status = 'ok';
     state.sync.lastError = '';
@@ -461,9 +587,10 @@ async function fetchTeacherName() {
     const body = await resp.json().catch(() => null);
     if (resp.ok && body && body.code === 0) {
       state.teacher.name = body.data.name || '';
+      persist(TEACHER_NAME_KEY, state.teacher.name,
+        '保存称呼失败，刷新后状态条要等接口回来才显示名字');
     } else if (resp.status === 401 || resp.status === 403) {
-      state.sync.status = 'error';
-      state.sync.lastError = (body && body.message) || '邀请码无效';
+      markTokenInvalid((body && body.message) || '邀请码已失效');
     }
   } catch (err) {
     console.error('校验邀请码失败:', err);
@@ -478,16 +605,132 @@ function renderSyncStatus() {
   const pending = state.cases.length + state.verdicts.length;
   const who = state.teacher.name ? `${state.teacher.name} · ` : '';
   const map = {
+    // 未登记与本机模式都招手让人点：前者是催他登记，后者是给他反悔的机会
+    unregistered: { cls: 'sync-unregistered', text: '填个称呼，开始记录 →' },
     local: { cls: 'sync-local', text: '本机模式 · 记录只存这台电脑' },
+    registering: { cls: 'sync-idle', text: '登记中…' },
+    invalid: { cls: 'sync-unregistered', text: '链接已失效 · 点这里重新登记' },
     idle: { cls: 'sync-idle', text: `${who}待同步` },
     syncing: { cls: 'sync-idle', text: `${who}同步中…` },
     ok: { cls: 'sync-ok', text: `${who}已同步 ${pending} 条` },
     error: { cls: 'sync-error', text: `${who}待同步 ${pending} 条 · 已存本机，稍后重试` },
   };
   const view = map[state.sync.status] || map.idle;
-  el.className = `sync-status ${view.cls}`;
+  // 请求飞在路上时点开面板没有意义，其余状态一律可点。
+  // 写成推导而不是给八条各挂一个 click 字段：漏挂一条就是无声的「点不动」。
+  const clickable = state.sync.status !== 'registering';
+  el.className = `sync-status ${view.cls}${clickable ? ' sync-clickable' : ''}`;
   el.textContent = view.text;
-  el.title = state.sync.lastError || '';
+  el.title = state.sync.lastError || (clickable ? '点击查看同步设置' : '');
+}
+
+/**
+ * 同步设置面板。未登记时是「填称呼」表单，已登记时是「专属链接 + 换个称呼」。
+ * 走同一个浮层，省一套 DOM，也让老师知道这两件事是一回事。
+ */
+export function openSyncPanel() {
+  const panel = document.getElementById('sync-panel');
+  if (!panel) return;
+  const signedIn = renderSyncPanel();
+  panel.classList.add('open');
+  if (!signedIn) resetNameInput();
+}
+
+/** 清空并聚焦称呼输入框。开面板与「换个称呼」都要这一对动作。 */
+function resetNameInput() {
+  const input = document.getElementById('register-name-input');
+  if (!input) return;
+  input.value = '';
+  input.focus();
+}
+
+export function closeSyncPanel() {
+  const panel = document.getElementById('sync-panel');
+  if (panel) panel.classList.remove('open');
+}
+
+/**
+ * 按有没有身份切换面板的两副面孔。
+ * @returns {boolean} 是否显示的「已登记」那一面
+ */
+function renderSyncPanel() {
+  const guest = document.getElementById('sync-panel-guest');
+  const member = document.getElementById('sync-panel-member');
+  if (!guest || !member) return false;
+
+  // 失效的 token 不算已登记：这时候老师需要的是重新填称呼，不是复制一条打不开的链接。
+  // 与 canSync() 同一个判断，只是那边问「能不能发」，这边问「给他看哪一面」。
+  const signedIn = canSync();
+  guest.style.display = signedIn ? 'none' : 'block';
+  member.style.display = signedIn ? 'block' : 'none';
+  if (!signedIn) return false;
+
+  const whoEl = document.getElementById('sync-panel-who');
+  if (whoEl) whoEl.textContent = state.teacher.name || '（未取到称呼）';
+
+  const linkEl = document.getElementById('sync-panel-link');
+  if (linkEl) linkEl.value = myLink();
+  return true;
+}
+
+/** 老师的专属链接。换设备靠它接回同一份数据——同名重新登记接不上。 */
+function myLink() {
+  if (!state.teacher.token) return '';
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.hash = '';
+  return `${url.href}?t=${state.teacher.token}`;
+}
+
+/** 面板里点「开始记录」 */
+export async function submitRegister() {
+  const input = document.getElementById('register-name-input');
+  const btn = document.getElementById('register-submit-btn');
+  const err = document.getElementById('register-error');
+  if (!input) return;
+
+  if (err) err.textContent = '';
+  if (btn) { btn.disabled = true; btn.textContent = '登记中…'; }
+
+  const result = await registerTeacher(input.value);
+
+  if (btn) { btn.disabled = false; btn.textContent = '开始记录'; }
+  if (!result.ok) {
+    if (err) err.textContent = result.message || '登记失败，请稍后重试';
+    return;
+  }
+  renderSyncPanel();
+  showToast(`已登记为「${state.teacher.name}」\n之后录入的命例与裁定会自动上传`);
+}
+
+/** 复制专属链接。剪贴板 API 在非 HTTPS 下会被浏览器禁掉，失败就让老师手动选中复制。 */
+export async function copyMyLink() {
+  const link = myLink();
+  if (!link) return;
+  try {
+    await navigator.clipboard.writeText(link);
+    showToast('专属链接已复制，换设备时用它打开');
+  } catch (err) {
+    console.error('复制失败，请手动选中链接复制:', err);
+    const el = document.getElementById('sync-panel-link');
+    if (el) { el.focus(); el.select(); }
+    showToast('复制失败，请手动选中链接复制');
+  }
+}
+
+/** 面板里点「只在本机用」 */
+export function chooseLocalOnly() {
+  stayLocalOnly();
+  closeSyncPanel();
+  showToast('已切到本机模式，记录只存这台电脑');
+}
+
+/** 面板里点「换个称呼」：退出身份，回到填称呼那一面 */
+export function switchTeacher() {
+  signOutTeacher();
+  renderSyncPanel();
+  resetNameInput();
+  showToast('已退出。本机的命例与裁定都还在，填新称呼后会重新上传一份');
 }
 
 // ============================================================================
@@ -2171,6 +2414,12 @@ if (typeof window !== 'undefined') {
       syncSolar,
       syncDst,
       syncSect,
+      openSyncPanel,
+      closeSyncPanel,
+      submitRegister,
+      copyMyLink,
+      chooseLocalOnly,
+      switchTeacher,
     };
 
     initTeacherToken();
@@ -2181,11 +2430,11 @@ if (typeof window !== 'undefined') {
     // 不 await：城市库慢，但首盘用不上它，让老师先看到盘
     whenCityDataReady();
 
-    if (state.teacher.token) {
-      fetchTeacherName();
-      runSync();                                        // 补传上次没送出去的
-      window.addEventListener('online', () => runSync()); // 网络恢复即重试
-    }
+    // 无条件挂：runSync 自己会问 canSync()，所以中途登记、退出、邀请码失效都不用再动监听
+    window.addEventListener('online', runSync);   // 网络恢复即重试
+    // 有缓存的称呼就不必再问一次 /api/me；邀请码有没有效，紧接着的 runSync 会顺带判定
+    if (state.teacher.token && !state.teacher.name) fetchTeacherName();
+    runSync();                                    // 补传上次没送出去的
 
     // 监听 12 位快速输入的实时输入，满 12 位时自动预览格式
     const q12 = document.getElementById('quick-12-input');

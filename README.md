@@ -39,7 +39,11 @@ sudo systemctl enable --now hongniang-bazi
 sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
 ```
 
-**开一位老师**：
+**老师自助登记**（默认路径）：把 `https://paipan.locxai.com/` 直接发出去即可。
+老师在页面上填个称呼，服务端现发一个随机邀请码存进 `teachers`（`source='self'`），之后照常回传。
+`/api/register` 按 IP 哈希限流，同一 IP 一小时 5 次；只存哈希不存明文 IP。
+
+**手工开一位老师**（`source='invite'`，正式试用仍走这条）：
 
 ```bash
 sudo -u www-data node -e "
@@ -71,7 +75,8 @@ npm run db:migrate               # 建表（--remote）
 npm run deploy                   # build + 发布
 ```
 
-**发一位老师上线**（邀请码即身份，吊销把 active 置 0）：
+**发一位老师上线**。默认让老师自己在页面上填称呼登记即可（落 `source='self'`）；
+要手工开一位正式老师（`source='invite'`）时，邀请码即身份，吊销把 active 置 0：
 
 ```bash
 npx wrangler d1 execute hongniang-bazi-db --remote --command \
@@ -93,6 +98,9 @@ npx wrangler d1 execute hongniang-bazi-db --remote --command \
 
 > 0002 迁移之前收上来的裁定，`our_gan_zhi` / `options` / `city_name` 为 NULL，
 > 且 `chart_id` 是旧格式、join 不到命例——分析时按「口径未知」剔除。
+>
+> 0003 起 `teachers.source` 区分来路：`invite` 是我们手工开的正式老师，`self` 是页面自助登记的。
+> 两者份量不同，统计时按 `source` 分开看，别混在一起算比例。
 
 `dist/` 由 `scripts/build.mjs` 按**白名单**组装，`docs/` 与 `engine/test/` 永远不会被发布。
 

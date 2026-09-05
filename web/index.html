@@ -122,6 +122,64 @@ body::before {
 .sync-status.sync-ok { color: var(--wood); }
 .sync-status.sync-error { color: var(--cinnabar); }
 .sync-status.sync-local { color: var(--ink-5); }
+/* 未登记：这是唯一一处要主动招手的状态，用朱砂加下划线把它和其他状态区分开 */
+.sync-status.sync-unregistered {
+  color: var(--cinnabar);
+  border-bottom: 1px dashed var(--cinnabar);
+  padding-bottom: 1px;
+}
+.sync-status.sync-clickable { cursor: pointer; }
+
+/* 同步设置浮层：未登记时填称呼，已登记时看专属链接 */
+.sync-panel {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  background: rgba(28,25,22,.42);
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.sync-panel.open { display: flex; }
+/* 纸面卡片本体走 .card-box / .card-title / .card-sub，这里只加浮层专属的差异 */
+.sync-panel-card {
+  width: 100%;
+  max-width: 340px;
+  margin-bottom: 0;
+  padding: 20px 18px 16px;
+  box-shadow: 0 18px 50px rgba(28,25,22,.28);
+}
+.sync-panel-card .card-title { display: block; margin-bottom: 6px; }
+.sync-panel-card .card-sub { color: var(--ink-3); line-height: 1.65; }
+.sync-panel-error {
+  font-size: 12px;
+  color: var(--cinnabar);
+  min-height: 17px;
+  margin-top: 6px;
+}
+.sync-panel-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.sync-panel-actions .primary-btn { flex: 1; }
+.sync-panel-link {
+  font-size: 11px;
+  color: var(--ink-3);
+  background: var(--paper-2);
+}
+/* 次要出口：本机模式与换称呼都走这里，做得比主按钮轻 */
+.sync-panel-minor {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
 
 .title-bar h1 {
   margin: 0;
@@ -689,6 +747,18 @@ body::before {
   border-color: var(--cinnabar);
   color: var(--cinnabar);
 }
+/* 第三档：比 secondary 更轻的纯文字按钮，给「先不登记」这类不希望被误点的出口 */
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--ink-5);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-btn:hover { color: var(--cinnabar); }
 
 /* 批量粘贴列表 */
 .batch-textarea {
@@ -1140,7 +1210,9 @@ body.engine-loading #engine-loading { display: flex; }
     <h1>红娘排盘 · 朱砂卷宗</h1>
   </div>
   <div class="sync-bar">
-    <span id="sync-status" class="sync-status sync-local">本机模式 · 记录只存这台电脑</span>
+    <!-- class 与文案全由 renderSyncStatus 填。这里手抄一份就会在首帧闪一句过期文案，
+         对已登记的老师还是句错的（「填个称呼」）。 -->
+    <span id="sync-status" class="sync-status" onclick="window.app.openSyncPanel()"></span>
   </div>
   <div class="tabs">
     <div class="tab" id="tab-btn-quick" onclick="window.app.switchTab('quick')">快速录入</div>
@@ -1425,6 +1497,52 @@ Alanzhou 199608101203 兰州 坤造 出生证
   <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a>
   （CC BY 4.0）· 历法底座 lunar-javascript（MIT）· 神煞与十神表据古籍自研
 </footer>
+
+<!-- 同步设置浮层。点遮罩关闭，点卡片本身不关（stopPropagation 靠 event.target 判断）。 -->
+<div id="sync-panel" class="sync-panel" onclick="if (event.target === this) window.app.closeSyncPanel()">
+  <div class="card-box sync-panel-card">
+
+    <!-- 未登记 -->
+    <div id="sync-panel-guest">
+      <div class="card-title">填个称呼，开始记录</div>
+      <div class="card-sub">
+        填好之后，您录入的命例与当场裁定会自动上传，换台设备也能接着看。
+        称呼只用于我们区分是谁的记录。
+      </div>
+      <input type="text" id="register-name-input" class="text-input"
+             placeholder="例如：王老师" maxlength="32"
+             onkeydown="if (event.key === 'Enter') window.app.submitRegister()">
+      <div id="register-error" class="sync-panel-error"></div>
+      <div class="sync-panel-actions">
+        <button type="button" id="register-submit-btn" class="primary-btn"
+                onclick="window.app.submitRegister()">开始记录</button>
+      </div>
+      <div class="sync-panel-minor">
+        <button type="button" class="link-btn" onclick="window.app.chooseLocalOnly()">先不登记，只在这台电脑上试</button>
+        <button type="button" class="link-btn" onclick="window.app.closeSyncPanel()">关闭</button>
+      </div>
+    </div>
+
+    <!-- 已登记 -->
+    <div id="sync-panel-member" style="display:none">
+      <div class="card-title">当前身份：<span id="sync-panel-who"></span></div>
+      <div class="card-sub">
+        换手机或换电脑时，用下面这条专属链接打开，才能接上同一份记录——
+        重新填一遍相同的称呼会另开一份，接不上。
+      </div>
+      <input type="text" id="sync-panel-link" class="text-input sync-panel-link" readonly
+             onclick="this.select()">
+      <div class="sync-panel-actions">
+        <button type="button" class="primary-btn" onclick="window.app.copyMyLink()">复制专属链接</button>
+      </div>
+      <div class="sync-panel-minor">
+        <button type="button" class="link-btn" onclick="window.app.switchTeacher()">换个称呼</button>
+        <button type="button" class="link-btn" onclick="window.app.closeSyncPanel()">关闭</button>
+      </div>
+    </div>
+
+  </div>
+</div>
 
 <!-- 浮层 Toast -->
 <div id="toast" class="toast"></div>

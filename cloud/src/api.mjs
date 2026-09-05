@@ -9,6 +9,15 @@ const MAX_CASES = 2000;
 const MAX_VERDICTS = 2000;
 const MAX_RETIRED = 2000;
 const MAX_TEXT = 2000;
+// 32 与 web/app.js 的 TEACHER_NAME_MAX 对齐，改一边要同时改另一边。
+const MAX_NAME = 32;
+// 注册限流：同一 IP 一小时内最多开 5 个。够一位老师换设备重登几次，
+// 也让脚本刷不出成千上万条脏数据。
+const REGISTER_MAX_PER_IP = 5;
+const REGISTER_WINDOW_MS = 60 * 60 * 1000;
+// 只留一倍余量给时钟漂移。留 24 小时的话，表和索引会白养 24 倍的行，
+// 而超出窗口的那些行没有任何读者。
+const REGISTER_LOG_TTL_MS = 2 * REGISTER_WINDOW_MS;
 
 class ApiError extends Error {
   constructor(status, code, message) {
@@ -77,6 +86,98 @@ async function authenticate(request, env) {
     throw new ApiError(403, 4031, '邀请码无效或已停用，请联系我们');
   }
   return teacher;
+}
+
+function toHex(bytes) {
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * 取调用方 IP 的哈希桶。Cloudflare 用 CF-Connecting-IP；自有服务器前面挂着 Caddy，
+ * 取 X-Forwarded-For 的第一段。两个都取不到就都归进 'unknown' 一个桶——
+ * 同一个桶里限流比不限流强，不为取不到 IP 就放行。
+ *
+ * 只哈希不存明文：限流要知道的是「是不是同一个人」，不需要知道他是谁。
+ */
+async function ipBucket(request) {
+  const raw = request.headers.get('cf-connecting-ip')
+    || request.headers.get('x-forwarded-for')
+    || '';
+  const ip = raw.split(',')[0].trim();   // cf-connecting-ip 不含逗号，对它是恒等操作
+  if (!ip) return 'unknown';
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`hongniang-bazi:${ip}`),
+  );
+  return toHex(new Uint8Array(digest));
+}
+
+/** 16 字节随机数的 hex。这是身份凭据，必须用 CSPRNG，不能用 Math.random */
+function newToken() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return toHex(bytes);
+}
+
+/**
+ * 自助登记。老师在页面上填个称呼，服务端现发一个随机邀请码。
+ *
+ * 名字**不当**主键、也不当凭据：同名复用一份数据的话，任何人输入「王老师」
+ * 就能读写他的全部记录。所以同名的两次登记是两份互不相干的数据，
+ * 换设备靠前端给出的专属链接接回来，不靠重新输名字。
+ *
+ * 限流写在函数体里而不抽成中间件：三个端点里只有这一个是公开的，
+ * 而且 register_log 与 teachers 两条 INSERT 必须在同一个 batch 里原子落盘——
+ * 抽成前置中间件反而会把它们劈开，让「发了身份但没记账」变成可能。
+ */
+async function handleRegister(request, env) {
+  const body = await readJson(request);
+  // 走 text()，与其它端点的字段校验同一套：非字符串一律 4002，不做静默强转
+  const name = (text(body.name, 'name', { required: true, maxLength: MAX_NAME }) ?? '').trim();
+  if (!name) throw new ApiError(400, 4012, '请填写您的称呼');
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const bucket = await ipBucket(request);
+
+  // 限流先查后写。并发下有可能多放行一两个，但这里挡的是脚本批量刷，
+  // 不是精确配额，不值得为它上一把锁。
+  const cutoff = new Date(now.getTime() - REGISTER_WINDOW_MS).toISOString();
+  const seen = await env.DB
+    .prepare('SELECT COUNT(*) AS n FROM register_log WHERE ip_hash = ? AND created_at > ?')
+    .bind(bucket, cutoff)
+    .first();
+  if (Number(seen.n) >= REGISTER_MAX_PER_IP) {
+    console.warn(JSON.stringify({
+      action: 'register', bucketPrefix: bucket.slice(0, 8), result: 'rate_limited',
+    }));
+    throw new ApiError(429, 4291, '登记太频繁了，请一小时后再试');
+  }
+
+  const token = newToken();
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO teachers (id, name, note, active, created_at, source)
+         VALUES (?, ?, NULL, 1, ?, 'self')`,
+      ).bind(token, name, nowIso),
+      env.DB.prepare('INSERT INTO register_log (ip_hash, created_at) VALUES (?, ?)')
+        .bind(bucket, nowIso),
+      // 顺手清掉过期的限流记录，免得这张表无限涨。
+      // 走 idx_register_log_created，是一次范围 seek 而不是全表扫。
+      env.DB.prepare('DELETE FROM register_log WHERE created_at < ?')
+        .bind(new Date(now.getTime() - REGISTER_LOG_TTL_MS).toISOString()),
+    ]);
+  } catch (err) {
+    console.error(JSON.stringify({
+      action: 'register', name, bucketPrefix: bucket.slice(0, 8),
+      error: String(err && err.message ? err.message : err),
+    }));
+    throw new ApiError(500, 5002, '登记失败，请稍后重试');
+  }
+
+  console.log(JSON.stringify({ action: 'register', teacherId: token, name, result: 'ok' }));
+  return ok({ token, name });
 }
 
 function caseStatement(env, teacherId, item, now) {
@@ -230,6 +331,10 @@ export async function handleApi(request, env) {
     if (pathname === '/api/me') {
       if (request.method !== 'GET') throw new ApiError(405, 4051, '方法不允许');
       return await handleMe(request, env);
+    }
+    if (pathname === '/api/register') {
+      if (request.method !== 'POST') throw new ApiError(405, 4051, '方法不允许');
+      return await handleRegister(request, env);
     }
     if (pathname === '/api/sync') {
       if (request.method !== 'POST') throw new ApiError(405, 4051, '方法不允许');
