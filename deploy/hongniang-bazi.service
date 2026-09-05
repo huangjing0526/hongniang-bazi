@@ -1,5 +1,9 @@
-# systemd 单元，放到 /etc/systemd/system/hongniang-bazi.service
-# 启用：systemctl enable --now hongniang-bazi
+# systemd 单元模板。__NODE_BIN__ 与 __RUN_USER__ 由 deploy/install.sh 按目标机替换，
+# 不要直接 cp 到 /etc/systemd/system/——请走 install.sh。
+#
+# 为什么 node 路径要可替换：生产机上 /usr/bin/node 可能被别的服务占着某个版本
+# （这台就是，locxai-api 跑在 Node 20 上），而本服务需要 22+ 的 node:sqlite。
+# 绝不能为了本服务去升系统 node，只能各用各的。
 
 [Unit]
 Description=红娘八字排盘 · 同步服务
@@ -7,9 +11,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=www-data
+User=__RUN_USER__
 WorkingDirectory=/srv/hongniang-bazi
-ExecStart=/usr/bin/node cloud/server.mjs
+ExecStart=__NODE_BIN__ cloud/server.mjs
 Environment=NODE_ENV=production
 Environment=HOST=127.0.0.1
 Environment=PORT=8080

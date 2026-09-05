@@ -16,7 +16,9 @@ DOMAIN="paipan.locxai.com"
 APP_DIR="/srv/hongniang-bazi"
 SERVICE="hongniang-bazi"
 PORT=8080
-RUN_USER="www-data"
+NEED_NODE=22
+# 本服务专用的 Node，装在 /opt 下，与系统 node 井水不犯河水
+NODE_PREFIX="/opt/node-v${NEED_NODE}"
 BUNDLE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 log() { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
@@ -27,27 +29,63 @@ die() { printf '\n\033[1;31m!! %s\033[0m\n' "$*" >&2; exit 1; }
 # ---------------------------------------------------------------- 0. 前置检查
 log "检查环境"
 command -v nginx >/dev/null || die "未找到 nginx"
-id "$RUN_USER" >/dev/null 2>&1 || die "用户 $RUN_USER 不存在，请改脚本里的 RUN_USER"
 
-if ss -lntp 2>/dev/null | grep -q ":$PORT "; then
-  die "端口 $PORT 已被占用，先确认是什么再继续（改 PORT 变量也可）"
+# 本服务自己占着 $PORT 不算冲突——脚本要能重复跑，后面第 2 步会重启它
+if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+  echo "$SERVICE 已在运行，稍后原地重启"
+elif ss -lntp 2>/dev/null | grep -q ":$PORT "; then
+  die "端口 $PORT 已被别的进程占用，先确认是什么再继续（改 PORT 变量也可）"
 fi
 
-# node:sqlite 需要 Node 22+
-NEED_NODE=22
-have_node=0
-if command -v node >/dev/null; then
-  cur=$(node -v | sed 's/^v//' | cut -d. -f1)
-  [ "$cur" -ge "$NEED_NODE" ] && have_node=1
-  echo "当前 Node: $(node -v)"
-fi
+# 跟着 nginx 的运行用户走。Debian 系是 www-data，RHEL 系是 nginx，别写死。
+RUN_USER="$(awk '$1=="user"{gsub(/;/,"",$2); print $2; exit}' /etc/nginx/nginx.conf)"
+[ -n "${RUN_USER:-}" ] && id "$RUN_USER" >/dev/null 2>&1 \
+  || die "无法从 nginx.conf 判断运行用户，请手工设置 RUN_USER"
+echo "服务运行用户：$RUN_USER"
 
-if [ "$have_node" -eq 0 ]; then
-  log "安装 Node $NEED_NODE（当前没有或版本过低）"
-  curl -fsSL "https://deb.nodesource.com/setup_${NEED_NODE}.x" | bash -
-  apt-get install -y nodejs
+# ---------------------------------------------------------------- 0.5 Node 22+
+#
+# node:sqlite 要 Node 22+。但生产机的 /usr/bin/node 往往被别的服务占着
+# （这台跑着 locxai-api，Node 20），**绝不能为了本服务去升系统 node**——
+# 那是拿别人的线上服务赌本服务的部署。够新就直接用，不够新就在 /opt 下装一份自己的。
+node_ok() { [ -x "$1" ] && "$1" -e "require('node:sqlite')" >/dev/null 2>&1; }
+
+NODE_BIN=""
+if command -v node >/dev/null && node_ok "$(command -v node)"; then
+  NODE_BIN="$(command -v node)"
+  echo "系统 Node 可用：$(node -v) @ $NODE_BIN"
+elif node_ok "$NODE_PREFIX/bin/node"; then
+  NODE_BIN="$NODE_PREFIX/bin/node"
+  echo "复用已装的独立 Node：$("$NODE_BIN" -v) @ $NODE_BIN"
+else
+  sys_node="$(node -v 2>/dev/null || echo 未安装)"
+  log "系统 Node 不满足要求（$sys_node），在 $NODE_PREFIX 单独装一份"
+  case "$(uname -m)" in
+    x86_64)  NODE_ARCH=x64 ;;
+    aarch64) NODE_ARCH=arm64 ;;
+    *) die "不认识的架构 $(uname -m)，请手工安装 Node $NEED_NODE+ 并把路径填进 NODE_PREFIX" ;;
+  esac
+
+  # 阿里云机器走阿里云镜像快得多，不通再回落官方源
+  for base in "https://mirrors.aliyun.com/nodejs-release" "https://nodejs.org/dist"; do
+    ver="$(curl -fsS -m 30 "$base/" 2>/dev/null | grep -o "v${NEED_NODE}\.[0-9]\+\.[0-9]\+" | sort -uV | tail -1)" || true
+    [ -n "$ver" ] || continue
+    echo "从 $base 取 $ver"
+    tmp="$(mktemp -d)"
+    if curl -fsS -m 300 "$base/$ver/node-$ver-linux-$NODE_ARCH.tar.xz" -o "$tmp/node.tar.xz"; then
+      rm -rf "$NODE_PREFIX"
+      mkdir -p "$NODE_PREFIX"
+      tar -xJf "$tmp/node.tar.xz" -C "$NODE_PREFIX" --strip-components=1
+      rm -rf "$tmp"
+      break
+    fi
+    rm -rf "$tmp"
+  done
+
+  node_ok "$NODE_PREFIX/bin/node" || die "独立 Node 安装失败，或它仍不支持 node:sqlite"
+  NODE_BIN="$NODE_PREFIX/bin/node"
+  echo "已安装：$("$NODE_BIN" -v) @ $NODE_BIN；系统 node 未改动，仍是 $sys_node"
 fi
-node -e "require('node:sqlite')" 2>/dev/null || die "这个 Node 不支持 node:sqlite，需要 22+"
 
 # ---------------------------------------------------------------- 1. 部署代码
 log "部署到 $APP_DIR"
@@ -58,8 +96,9 @@ chown -R "$RUN_USER:$RUN_USER" "$APP_DIR"
 # 运行时零外部依赖，只用 Node 内置模块，不需要 npm install
 
 # ---------------------------------------------------------------- 2. systemd
-log "安装 systemd 服务（监听 127.0.0.1:$PORT）"
-cp "$BUNDLE_DIR/deploy/$SERVICE.service" "/etc/systemd/system/$SERVICE.service"
+log "安装 systemd 服务（监听 127.0.0.1:$PORT，用 $NODE_BIN）"
+sed -e "s|__NODE_BIN__|$NODE_BIN|" -e "s|__RUN_USER__|$RUN_USER|" \
+  "$BUNDLE_DIR/deploy/$SERVICE.service" > "/etc/systemd/system/$SERVICE.service"
 systemctl daemon-reload
 systemctl enable "$SERVICE"
 systemctl restart "$SERVICE"
@@ -72,7 +111,11 @@ echo "本地健康检查通过"
 log "签发证书"
 mkdir -p /var/www/certbot
 if [ ! -d "/etc/letsencrypt/live/$DOMAIN" ]; then
-  command -v certbot >/dev/null || apt-get install -y certbot
+  if ! command -v certbot >/dev/null; then
+    if command -v dnf >/dev/null; then dnf install -y certbot
+    elif command -v yum >/dev/null; then yum install -y certbot
+    else apt-get install -y certbot; fi
+  fi
 
   # 先只放 HTTP，让 ACME 验证能过
   cat > "/etc/nginx/conf.d/$DOMAIN.conf" <<NGINX
@@ -112,7 +155,7 @@ cat <<TIP
 部署完成。
 
 开一位试用老师：
-  sudo -u $RUN_USER node -e "
+  sudo -u $RUN_USER $NODE_BIN -e "
     const {DatabaseSync}=require('node:sqlite');
     const db=new DatabaseSync('$APP_DIR/data/hongniang-bazi.sqlite');
     db.prepare(\"INSERT INTO teachers (id,name,active,created_at) VALUES ('teacher-001','试用老师1',1,datetime('now'))\").run();
@@ -120,7 +163,7 @@ cat <<TIP
   链接：https://$DOMAIN/?t=teacher-001
 
 看收上来的数据：
-  sudo -u $RUN_USER node -e "
+  sudo -u $RUN_USER $NODE_BIN -e "
     const {DatabaseSync}=require('node:sqlite');
     const db=new DatabaseSync('$APP_DIR/data/hongniang-bazi.sqlite');
     console.table(db.prepare('SELECT chart_id,disputed_pillars,school,reason FROM verdicts').all());
