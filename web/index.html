@@ -731,6 +731,8 @@ body::before {
 
 /* 老师裁定表单卡片（§13.2 / 优先级 4） */
 .verdict-box {
+  /* 顶部 tab 栏是 sticky 的，滚过来时给它让出位置，别把标题压在下面 */
+  scroll-margin-top: 96px;
   margin: 16px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -791,14 +793,82 @@ body::before {
   display: flex;
   align-items: center;
   gap: 4px;
+  margin-bottom: 6px;
   font-size: 12px;
 }
-.pillar-gz-item input {
-  width: 58px;
+/* 老师多半在手机上填，下拉给足高度和字号，别做成难点的小方块 */
+.pillar-gz-item .gz-select {
+  min-width: 64px;
+  min-height: 34px;
   padding: 4px 6px;
   border: 1px solid var(--line);
-  font-size: 13px;
+  background: var(--paper);
+  font-size: 15px;
+  color: var(--ink);
 }
+.pillar-gz-item .gz-eg {
+  color: var(--ink-5);
+  font-size: 11px;
+}
+
+/* 对照页一键裁定 */
+.compare-actions { padding: 0 16px 16px; }
+.compare-pick-row { display: flex; gap: 8px; margin-top: 4px; }
+.compare-pick-btn {
+  flex: 1;
+  min-height: 44px;
+  padding: 10px 8px;
+  border: 1px solid var(--cinnabar);
+  background: var(--paper);
+  color: var(--cinnabar);
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.compare-pick-btn.active { background: var(--cinnabar); color: var(--paper); }
+.compare-pick-none {
+  display: block;
+  width: 100%;
+  min-height: 38px;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+.compare-confirm {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+.compare-confirm .radio-group { margin: 6px 0 10px; }
+
+/* 出生地待确认条 */
+.city-confirm-bar {
+  padding: 10px 16px;
+  background: #fdf6e3;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.city-confirm-bar strong { color: var(--cinnabar); }
+.city-confirm-alt {
+  display: inline-block;
+  margin: 4px 6px 0 0;
+  padding: 4px 10px;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  font-size: 12px;
+  cursor: pointer;
+}
+.city-confirm-alt.current { border-color: var(--cinnabar); color: var(--cinnabar); }
 
 /* 裁定记录管理 Tab */
 .verdicts-container {
@@ -1103,6 +1173,9 @@ Alanzhou 199608101203 兰州 坤造 出生证
   <!-- 第一屏常驻分歧风险条（§7.2 / 优先级 2） -->
   <div id="risk-banner-box" class="risk-box"></div>
 
+  <!-- 批量粘贴时地名跨省重名，工具选了一个但不敢替老师做主，就地给出改选入口 -->
+  <div id="city-confirm-bar" class="city-confirm-bar" style="display:none;"></div>
+
   <!-- 时柱变动横幅 -->
   <div id="solar-banner" class="banner">时柱因开启真太阳时发生跨时辰翻转</div>
 
@@ -1148,26 +1221,39 @@ Alanzhou 199608101203 兰州 坤造 出生证
         <label><input type="checkbox" id="verdict-pillar-day" onchange="window.app.onDisputedPillarToggle('day', this.checked)"> 日柱</label>
         <label><input type="checkbox" id="verdict-pillar-time" onchange="window.app.onDisputedPillarToggle('time', this.checked)"> 时柱</label>
       </div>
+      <!-- 改成两个下拉：老师在手机上不用打字，也堵住「甲丑」这种六十甲子里没有的组合 -->
       <div class="pillar-inputs-block">
         <div class="pillar-gz-item" id="verdict-group-year" style="display:none;">
-          <span>年柱认定:</span><input type="text" id="verdict-gz-year" placeholder="如甲子" maxlength="2">
+          <span>年柱认定<span class="verdict-req">*</span>:</span>
+          <select id="verdict-gan-year" class="gz-select" aria-label="年柱天干"></select>
+          <select id="verdict-zhi-year" class="gz-select" aria-label="年柱地支"></select>
+          <span class="gz-eg">如 甲子</span>
         </div>
         <div class="pillar-gz-item" id="verdict-group-month" style="display:none;">
-          <span>月柱认定:</span><input type="text" id="verdict-gz-month" placeholder="如丙申" maxlength="2">
+          <span>月柱认定<span class="verdict-req">*</span>:</span>
+          <select id="verdict-gan-month" class="gz-select" aria-label="月柱天干"></select>
+          <select id="verdict-zhi-month" class="gz-select" aria-label="月柱地支"></select>
+          <span class="gz-eg">如 丙申</span>
         </div>
         <div class="pillar-gz-item" id="verdict-group-day" style="display:none;">
-          <span>日柱认定:</span><input type="text" id="verdict-gz-day" placeholder="如己卯" maxlength="2">
+          <span>日柱认定<span class="verdict-req">*</span>:</span>
+          <select id="verdict-gan-day" class="gz-select" aria-label="日柱天干"></select>
+          <select id="verdict-zhi-day" class="gz-select" aria-label="日柱地支"></select>
+          <span class="gz-eg">如 己卯</span>
         </div>
         <div class="pillar-gz-item" id="verdict-group-time" style="display:none;">
-          <span>时柱认定:</span><input type="text" id="verdict-gz-time" placeholder="如己巳" maxlength="2">
+          <span>时柱认定<span class="verdict-req">*</span>:</span>
+          <select id="verdict-gan-time" class="gz-select" aria-label="时柱天干"></select>
+          <select id="verdict-zhi-time" class="gz-select" aria-label="时柱地支"></select>
+          <span class="gz-eg">如 己巳</span>
         </div>
       </div>
     </div>
 
     <div class="input-row">
-      <label class="input-label">时间来源<span class="verdict-req">*（必填：唯一能分开记录有误与历法分歧的依据）</span></label>
+      <label class="input-label">时间来源<span class="verdict-req">*（必填：唯一能分开记录有误与历法分歧的依据，故不预选）</span></label>
       <div class="radio-group">
-        <label><input type="radio" name="verdict-time-source" value="出生证" checked> 出生证</label>
+        <label><input type="radio" name="verdict-time-source" value="出生证"> 出生证</label>
         <label><input type="radio" name="verdict-time-source" value="家人口述"> 家人口述</label>
         <label><input type="radio" name="verdict-time-source" value="客户自报"> 客户自报</label>
       </div>
@@ -1176,6 +1262,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
     <div class="input-row">
       <label class="input-label" for="verdict-school-select">依据流派</label>
       <select id="verdict-school-select" class="select-input">
+        <option value="">请选择（不确定可留空）</option>
         <option value="子平真诠">子平真诠</option>
         <option value="滴天髓">滴天髓</option>
         <option value="渊海子平">渊海子平</option>
@@ -1202,24 +1289,25 @@ Alanzhou 199608101203 兰州 坤造 出生证
 <!-- ===================================================================== -->
 <div id="tab-compare" class="tab-pane">
   <div class="compare-pane-box">
-    <div class="card-title">同一个盘 · 两套口径并排</div>
-    <div class="card-sub">
-      左边是不做任何校正、直接按钟表时排的盘；右边是您当前开关下的盘。不同的柱标朱砂。
-      哪一套对由您判断，工具不替您裁定。
+    <div class="card-title">同一个盘 · 两套排法并排</div>
+    <div class="card-sub" id="compare-sub">
+      本页把这个盘存在争议的那一条口径，开与关两种排法并排放着。不同的柱标朱砂。
+      哪一套对由您判断，工具不替您裁定——但请告诉我们您按哪一套。
     </div>
 
     <div class="compare-container">
       <div class="compare-col">
-        <div class="compare-kicker">未校正（按钟表时直接排）</div>
+        <div class="compare-kicker" id="compare-base-kicker"></div>
         <div id="compare-base-pillars"></div>
       </div>
       <div class="compare-col">
-        <div class="compare-kicker">当前口径</div>
+        <div class="compare-kicker" id="compare-curr-kicker"></div>
         <div id="compare-curr-pillars"></div>
       </div>
     </div>
 
     <div id="compare-diff-explanation" class="compare-diff-explanation"></div>
+    <div id="compare-actions" class="compare-actions"></div>
   </div>
 </div>
 
@@ -1230,7 +1318,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
   <div class="verdicts-container">
     <div class="card-title">老师历史裁定卷宗</div>
     <div class="card-sub">
-      所有当场记录的老师裁定均安全保存在浏览器本地（localStorage）。可随时导出为标准 JSON 交付集成或给引擎提供真实错例支持。
+      裁定先存在您这台电脑上，断网照样能记；用专属链接打开时会同步一份到我们的服务器（右上角显示同步状态）。也可随时导出为 JSON。
     </div>
     <div class="verdict-top-actions">
       <button class="primary-btn" style="flex:1;" onclick="window.app.exportVerdictsJson()">📥 导出裁定 JSON</button>

@@ -59,13 +59,14 @@ function decorate(pillar, dayGan) {
  * @param {1|2} [input.sect=1]   1 = 子初换日（问真默认）, 2 = 早晚子时
  * @param {'first'|'second'|'unknown'} [input.timeFold='unknown']
  * @param {'male'|'female'} [input.gender='male']
+ * @param {boolean} [input.cityKnown=true]  出生地是否已落实；false 时经度是兜底的 120
  * @returns {{charts:object[], warnings:string[]}}  more than one chart iff the
  *          recorded time falls in the DST end-day repeated hour with unknown fold
  */
 export function computeChart(input) {
   const {
     longitude = 120, applyDst = true, applyTrueSolar = true,
-    sect = 1, timeFold = 'unknown', gender = 'male',
+    sect = 1, timeFold = 'unknown', gender = 'male', cityKnown = true,
   } = input;
   const clock = {
     year: input.year, month: input.month, day: input.day,
@@ -86,12 +87,12 @@ export function computeChart(input) {
   }
 
   const charts = folds.map((fold) =>
-    buildOne({ clock, longitude, applyDst, applyTrueSolar, sect, timeFold: fold, gender }),
+    buildOne({ clock, longitude, applyDst, applyTrueSolar, sect, timeFold: fold, gender, cityKnown }),
   );
   return { charts, warnings };
 }
 
-function buildOne({ clock, longitude, applyDst, applyTrueSolar, sect, timeFold, gender }) {
+function buildOne({ clock, longitude, applyDst, applyTrueSolar, sect, timeFold, gender, cityKnown }) {
   const audit = [];
   audit.push({ step: '钟表时', value: fmt(clock), note: '出生记录上的时间，原样输入' });
 
@@ -148,9 +149,9 @@ function buildOne({ clock, longitude, applyDst, applyTrueSolar, sect, timeFold, 
   pillars.day.zhuXing = gender === 'female' ? '元女' : '元男';
 
   applyShenSha(pillars);
-  const risks = buildRisks({ clock, beijing, trueSolar, solarOffset });
+  const risks = buildRisks({ clock, beijing, trueSolar, solarOffset, cityKnown });
   return assertChart({
-    input: { ...clock, longitude, applyDst, applyTrueSolar, sect, timeFold, gender },
+    input: { ...clock, longitude, applyDst, applyTrueSolar, sect, timeFold, gender, cityKnown },
     times: { clock, beijing, trueSolar },
     lunar: beijingChart.lunar.toString(),
     ganZhi: PILLAR_KEYS.map((k) => pillars[k].ganZhi).join(' '),

@@ -51,3 +51,15 @@ export function changSheng(gan, zhi) {
   const step = GAN_YANG[gan] ? (idx - start + 12) % 12 : (start - idx + 12) % 12;
   return CHANG_SHENG[step];
 }
+
+/**
+ * 干支是否构成六十甲子中的一支。
+ * 阳干只配阳支、阴干只配阴支，所以 10×12 里只有 60 种合法组合——
+ * 老师用两个下拉选出「甲丑」这种不存在的组合时，要在提交前拦住。
+ */
+export function isValidGanZhi(gan, zhi) {
+  const g = GAN.indexOf(gan);
+  const z = ZHI.indexOf(zhi);
+  if (g < 0 || z < 0) return false;
+  return g % 2 === z % 2;
+}

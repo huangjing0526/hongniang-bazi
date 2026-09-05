@@ -79,12 +79,20 @@ npx wrangler d1 execute hongniang-bazi-db --remote --command \
 # 把 https://paipan.dsxzai.com/?t=lz-wang 发给他
 ```
 
-**看收上来的数据**：
+**看收上来的数据**：裁定要和命例 join 着看才有意义（`verdicts.chart_id` 就是 `cases.id`），
+`our_gan_zhi` 是当时工具排出的四柱、`options` 是当时三个开关的状态——
+少了这两样，同一条裁定说不清老师认可的是哪一种排法。
 
 ```bash
 npx wrangler d1 execute hongniang-bazi-db --remote --command \
-  "SELECT chart_id, disputed_pillars, teacher_gan_zhi, school, reason FROM verdicts ORDER BY created_at DESC;"
+  "SELECT c.name, c.birth_at, c.city_name, v.disputed_pillars, v.teacher_gan_zhi, \
+          v.our_gan_zhi, v.options, v.time_source, v.school, v.reason \
+   FROM verdicts v JOIN cases c ON c.teacher_id = v.teacher_id AND c.id = v.chart_id \
+   ORDER BY v.created_at DESC;"
 ```
+
+> 0002 迁移之前收上来的裁定，`our_gan_zhi` / `options` / `city_name` 为 NULL，
+> 且 `chart_id` 是旧格式、join 不到命例——分析时按「口径未知」剔除。
 
 `dist/` 由 `scripts/build.mjs` 按**白名单**组装，`docs/` 与 `engine/test/` 永远不会被发布。
 

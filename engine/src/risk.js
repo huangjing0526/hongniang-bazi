@@ -17,8 +17,19 @@ function nearestJieQi(beijing) {
 }
 
 /** 根据已计算的三层时间生成分歧风险。 */
-export function buildRisks({ clock, beijing, trueSolar, solarOffset }) {
+export function buildRisks({ clock, beijing, trueSolar, solarOffset, cityKnown = true }) {
   const risks = [];
+  // 出生地没落实时经度只能按东经 120 度顶着算，真太阳时偏移就只剩均时差（±16 分），
+  // TRUE_SOLAR 那条判据几乎必然不触发——于是一个出生地未知的盘会亮绿灯说「各家一致」。
+  // 那不是「不在分歧区」，是「无从判断」，必须单独说出来。
+  if (!cityKnown) {
+    risks.push({
+      kind: RISK_KIND.CITY_UNKNOWN,
+      level: RISK_LEVEL.WARN,
+      message: '出生地未落实，经度暂按东经 120 度计算。真太阳时校正是否会改时柱，本盘无从判断——请先补出生地。',
+      affects: ['day', 'time'],
+    });
+  }
   const { status, period } = classifyDst(clock);
   if (period && status !== DST_STATUS.OUTSIDE) risks.push({ kind:RISK_KIND.DST, level:RISK_LEVEL.INFO, message:'出生时间落在中国实行夏令时的日期范围内，时柱可能受校正影响。', affects:['day','time'] });
   if (status === DST_STATUS.AMBIGUOUS) risks.push({ kind:RISK_KIND.DST_FOLD, level:RISK_LEVEL.WARN, message:'夏令时结束当天这一小时重复出现，需确认出生记录对应前一遍还是后一遍。', affects:['day','time'] });

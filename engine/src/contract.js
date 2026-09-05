@@ -42,7 +42,7 @@ export const ROW_LABELS = {
  * @property {ShenSha[]} shenSha
  */
 
-/** 分歧风险种类。§7.2 第一屏常驻条只认这四种，不要新增而不通知前端。 */
+/** 分歧风险种类。§7.2 第一屏常驻条只认这几种，不要新增而不通知前端。 */
 export const RISK_KIND = /** @type {const} */ ({
   DST: 'dst',                 // 落在 1986–1991 夏令时窗口
   DST_FOLD: 'dst_fold',       // 夏令时结束日重复小时，输出双盘
@@ -50,6 +50,7 @@ export const RISK_KIND = /** @type {const} */ ({
   TRUE_SOLAR: 'true_solar',   // 真太阳时偏移足以跨时辰
   ZI_SHI: 'zi_shi',           // 23:00–01:00，子时两派日柱不同
   JIE_QI: 'jie_qi',           // 距交节 < 6 小时
+  CITY_UNKNOWN: 'city_unknown', // 出生地没落实，经度按 120 度顶着算
 });
 
 export const RISK_LEVEL = /** @type {const} */ ({ INFO: 'info', WARN: 'warn' });
@@ -102,13 +103,35 @@ export const TIME_SOURCE = /** @type {const} */ ({
   SELF: '客户自报',
 });
 
+// 干支两表与合法性判据从 tables.js 转出。web 侧的裁定表单要用它们做下拉与校验，
+// 但不该伸手进引擎内部，也不该自己抄一份抄错——统一从契约这道门出去。
+export { GAN, ZHI, isValidGanZhi } from './tables.js';
+
+/**
+ * 排盘口径快照。裁定必须带上它，否则事后无法复现老师当时看到的是哪一个盘：
+ * 同一个人、同一组开关全关排出「庚午」，真太阳时一开排出「己巳」，
+ * 老师说的「你们排对了」到底指哪一个，只有这四个字段能回答。
+ * @typedef {object} ChartOptions
+ * @property {boolean} applyTrueSolar
+ * @property {boolean} applyDst
+ * @property {number} sect        1 子初换日 / 2 早晚子时
+ * @property {string} timeFold    unknown / first / second
+ */
+
 /**
  * @typedef {object} Verdict
- * @property {string} chartId
+ * @property {string} id       客户端 uuid，重复同步靠它去重
+ * @property {string} chartId  **等于 cases.id**（见 caseIdOf）。命例表与裁定表只靠它 join，
+ *                             两边必须由同一个函数生成，不要在别处另拼一个格式
  * @property {string[]} disputedPillars  PILLAR_KEYS 子集；空数组表示「与我们一致」
- * @property {Record<string,string>} teacherGanZhi  仅分歧柱，如 {time:'己巳'}
- * @property {string} school   依据流派，自由文本
- * @property {string} timeSource  TIME_SOURCE 之一 —— 唯一能分开 L2 与 L1/L3 的字段，必填
+ * @property {Record<string,string>} teacherGanZhi  仅分歧柱，如 {time:'己巳'}；
+ *                             勾了柱位就必须有值，空对象的裁定没有分析价值，前端拦住
+ * @property {string} ourGanZhi  工具当时排出的四柱，空格分隔。存下来才能免去事后重算
+ * @property {ChartOptions} options  当时的三个开关 + 双盘分支
+ * @property {string} cityName   当时的出生地展示名
+ * @property {number} longitude  当时用的经度
+ * @property {string} school   依据流派，自由文本，可空
+ * @property {string} timeSource  TIME_SOURCE 之一 —— 唯一能分开 L2 与 L1/L3 的字段，必填，无默认值
  * @property {string} reason
  * @property {string} createdAt  ISO
  */

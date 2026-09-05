@@ -94,6 +94,7 @@ function caseStatement(env, teacherId, item, now) {
        status = excluded.status, synced_at = excluded.synced_at`,
   ).bind(
     teacherId,
+    // 120 与 web/app.js 的 CASE_ID_MAX 对齐，改一边要同时改另一边
     text(item.id, 'case.id', { required: true, maxLength: 120 }),
     text(item.name, 'case.name', { maxLength: 120 }),
     text(item.gender, 'case.gender', { maxLength: 16 }),
@@ -110,13 +111,17 @@ function caseStatement(env, teacherId, item, now) {
 function verdictStatement(env, teacherId, item, now) {
   if (item === null || typeof item !== 'object') throw new ApiError(400, 4006, '裁定格式不正确');
 
+  // our_gan_zhi / options / city_name / longitude 是 0002 补的排盘上下文。
+  // 缺了它们，一条裁定说不清老师当时看的是哪个口径下的盘，等于收了个寂寞。
   return env.DB.prepare(
-    `INSERT INTO verdicts (teacher_id, id, chart_id, disputed_pillars, teacher_gan_zhi, school, time_source, reason, created_at, synced_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO verdicts (teacher_id, id, chart_id, disputed_pillars, teacher_gan_zhi, school, time_source, reason, created_at, our_gan_zhi, options, city_name, longitude, synced_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (teacher_id, id) DO UPDATE SET
        chart_id = excluded.chart_id, disputed_pillars = excluded.disputed_pillars,
        teacher_gan_zhi = excluded.teacher_gan_zhi, school = excluded.school,
        time_source = excluded.time_source, reason = excluded.reason,
+       our_gan_zhi = excluded.our_gan_zhi, options = excluded.options,
+       city_name = excluded.city_name, longitude = excluded.longitude,
        synced_at = excluded.synced_at`,
   ).bind(
     teacherId,
@@ -128,6 +133,10 @@ function verdictStatement(env, teacherId, item, now) {
     text(item.timeSource, 'verdict.timeSource', { required: true, maxLength: 64 }),
     text(item.reason, 'verdict.reason'),
     text(item.createdAt, 'verdict.createdAt', { required: true, maxLength: 40 }),
+    text(item.ourGanZhi, 'verdict.ourGanZhi', { maxLength: 64 }),
+    item.options ? jsonField(item.options, 'verdict.options') : null,
+    text(item.cityName, 'verdict.cityName', { maxLength: 120 }),
+    Number.isFinite(item.longitude) ? item.longitude : null,
     now,
   );
 }

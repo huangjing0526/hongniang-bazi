@@ -10,6 +10,9 @@ import {
   TIME_SOURCE,
   RISK_KIND,
   RISK_LEVEL,
+  GAN,
+  ZHI,
+  isValidGanZhi,
 } from '../engine/src/contract.js';
 
 // 五行映射表：用于天干、地支、藏干着色
@@ -63,6 +66,7 @@ const state = {
     minute: 3,
     cityName: '甘肃省 兰州市 城关区',
     longitude: 103.825,
+    cityKnown: true,   // false 时经度是兜底的 120，引擎会单独报一条风险
     applyDst: false,        // 默认关，由老师按需开
     applyTrueSolar: false,  // 默认关；开启后兰州这类西部盘会跨时辰
     sect: 1,                // 流派1: 子初换日; 2: 早晚子时
@@ -71,14 +75,16 @@ const state = {
   // 引擎计算输出结果
   currentResult: null,
   activeChartIndex: 0,
-  // 批量命例列表
-  batchCases: [],
+  // 本机命例列表。单个录入与批量粘贴写的是同一个列表——
+  // 早先只有批量会进这里，于是单个录入的盘永远同步不上去，裁定成了无源之水。
+  cases: [],
   activeCaseIndex: -1,
   // 历史裁定记录
   verdicts: [],
   // 城市检索缓存
   cities: [],
   lookupCityFn: null,
+  resolveCityFn: null,
   // 云端同步（无邀请码时全程不联网，保持本机模式）
   teacher: { token: '', name: '' },
   sync: { status: 'local', lastError: '', lastSyncedAt: '' },
@@ -103,7 +109,10 @@ async function initCityData() {
   try {
     const cityModule = await import('../engine/src/city.js');
     state.lookupCityFn = cityModule.lookupCity;
+    state.resolveCityFn = cityModule.resolveCity;
   } catch (err) {
+    // 兜底方案没有加权排序也没有歧义判断，只保证「还能查」。
+    // 一旦走到这里，批量解析一律按「有歧义」处理，宁可多问一句也不静默选错地方。
     console.warn('动态导入 city.js 异常，启用 cities.json fetch 备用方案:', err);
     try {
       const resp = await fetch('/engine/data/cities.json');
@@ -114,11 +123,89 @@ async function initCityData() {
         if (!keyword) return [];
         return state.cities.filter((c) => normalize(c.name).includes(keyword));
       };
+      state.resolveCityFn = (query) => {
+        const candidates = state.lookupCityFn(query);
+        return { city: candidates[0] ?? null, candidates, ambiguous: candidates.length > 1 };
+      };
     } catch (e2) {
       console.error('加载城市数据失败:', e2);
       state.lookupCityFn = () => [];
+      state.resolveCityFn = () => ({ city: null, candidates: [], ambiguous: false });
     }
   }
+}
+
+// 批量行里认不出出生地时的占位名。经度会兜底成 120，引擎据此报 CITY_UNKNOWN 风险。
+const UNKNOWN_CITY = '未知地（按标准时）';
+
+const CASES_KEY = 'bazi_cases';
+const LEGACY_CASES_KEY = 'bazi_batch_cases';
+
+// 与 cloud/src/api.mjs 里 case.id / verdict.chartId 的 maxLength 对齐。
+// 前端超了这个长度，服务端会整批 400——两边任一处要改，另一处必须跟着改。
+const CASE_ID_MAX = 120;
+
+/**
+ * 命例 id。**cases.id 与 verdicts.chart_id 都由这里生成，别处不要另拼一个格式**——
+ * 两边格式一旦不同，服务端那两张表就永远 join 不上，收回来的裁定认不出是哪个盘。
+ *
+ * 出生地进 id：同一时刻、同一姓名但出生地不同，是两个盘，不能被 upsert 合成一条。
+ * 三个开关**不进** id：换开关看的是同一个人同一个盘的不同排法，仍是一条命例；
+ * 口径差异记在裁定的 options 里。
+ *
+ * @param {{year:number,month:number,day:number,hour:number,minute:number,
+ *          name?:string,gender:string,cityName?:string,parsedTime?:object}} src
+ *          state.input 或命例对象（命例的时间在 parsedTime 里）
+ */
+function caseIdOf(src) {
+  const t = src.parsedTime ?? src;
+  if (!t || !Number.isFinite(Number(t.year))) {
+    // 时间没解析出来的错误行也要有稳定 id，否则每次粘贴都当成新记录堆进列表
+    return `unparsed-${normalizeRawLine(src.raw ?? src.name ?? '')}`.slice(0, CASE_ID_MAX);
+  }
+  const pad = (n) => String(n).padStart(2, '0');
+  const birth = `${t.year}${pad(t.month)}${pad(t.day)}${pad(t.hour)}${pad(t.minute)}`;
+  const place = String(src.cityName ?? '').replace(/\s+/g, '') || '未知地';
+  const who = String(src.name ?? '').replace(/\s+/g, '') || '未命名';
+  return `${birth}-${src.gender}-${place}-${who}`.slice(0, CASE_ID_MAX);
+}
+
+/**
+ * 把当前录入的盘落成一条命例。单个录入路径也要走这里——
+ * 服务端只有拿到命例，裁定才复现得出来。id 相同即视为同一条，就地更新不新增。
+ * @returns {string} 命例 id
+ */
+function upsertCaseFromInput() {
+  const inp = state.input;
+  const id = caseIdOf(inp);
+  // raw 与 timeSource 只有批量粘贴才有，刻意不放进 fields——
+  // 否则更新已有命例时会拿空值把它们盖掉
+  const fields = {
+    id,
+    name: inp.name,
+    gender: inp.gender,
+    cityName: inp.cityName,
+    longitude: inp.longitude,
+    cityKnown: inp.cityKnown !== false,
+    parsedTime: {
+      year: inp.year, month: inp.month, day: inp.day, hour: inp.hour, minute: inp.minute,
+    },
+    status: 'valid',
+    errorMsg: '',
+  };
+
+  const idx = state.cases.findIndex((c) => c.id === id);
+  if (idx >= 0) {
+    state.cases[idx] = { ...state.cases[idx], ...fields };
+    state.activeCaseIndex = idx;
+  } else {
+    state.cases.push({ ...fields, raw: '', timeSource: '' });
+    state.activeCaseIndex = state.cases.length - 1;
+  }
+
+  persistCases();
+  renderBatchList();
+  return id;
 }
 
 /** 从 localStorage 读取持久化数据 */
@@ -134,21 +221,34 @@ function loadPersistedData() {
       }
       if (backfilled) localStorage.setItem('bazi_verdicts', JSON.stringify(state.verdicts));
     }
-    const savedCases = localStorage.getItem('bazi_batch_cases');
+    // bazi_batch_cases 是只装批量命例的旧键；老师浏览器里可能还留着，读进来后改存新键
+    const saved = localStorage.getItem(CASES_KEY);
+    const fromLegacy = saved === null;
+    const savedCases = saved ?? localStorage.getItem(LEGACY_CASES_KEY);
     if (savedCases) {
-      state.batchCases = JSON.parse(savedCases);
+      state.cases = JSON.parse(savedCases);
+      // 旧记录没有稳定 id（case_时间戳_序号），补成与裁定同源的 caseIdOf，两表才 join 得上
+      let backfilled = false;
+      for (const c of state.cases) {
+        const wanted = caseIdOf(c);
+        if (c.id !== wanted) { c.id = wanted; backfilled = true; }
+      }
+      if (backfilled || fromLegacy) {
+        localStorage.setItem(CASES_KEY, JSON.stringify(state.cases));
+      }
+      localStorage.removeItem(LEGACY_CASES_KEY);
     }
   } catch (e) {
     console.error('读取 localStorage 失败:', e);
   }
 }
 
-/** 保存批量命例至 localStorage */
-function persistBatchCases() {
+/** 保存命例至 localStorage */
+function persistCases() {
   try {
-    localStorage.setItem('bazi_batch_cases', JSON.stringify(state.batchCases));
+    localStorage.setItem(CASES_KEY, JSON.stringify(state.cases));
   } catch (e) {
-    console.error('保存批量命例至 localStorage 失败:', e);
+    console.error('保存命例至 localStorage 失败:', e);
   }
   scheduleSync();
 }
@@ -227,7 +327,7 @@ async function runSync() {
     const resp = await fetch('/api/sync', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-teacher-token': state.teacher.token },
-      body: JSON.stringify({ cases: state.batchCases, verdicts: state.verdicts }),
+      body: JSON.stringify({ cases: state.cases, verdicts: state.verdicts }),
     });
     const body = await resp.json().catch(() => null);
 
@@ -273,7 +373,7 @@ function renderSyncStatus() {
   const el = document.getElementById('sync-status');
   if (!el) return;
 
-  const pending = state.batchCases.length + state.verdicts.length;
+  const pending = state.cases.length + state.verdicts.length;
   const who = state.teacher.name ? `${state.teacher.name} · ` : '';
   const map = {
     local: { cls: 'sync-local', text: '本机模式 · 记录只存这台电脑' },
@@ -357,8 +457,10 @@ export function parseBatchCases(text) {
     const line = lines[idx];
     let name = `命例 ${idx + 1}`;
     let gender = 'male';
-    let cityName = '未知地（按标准时）';
+    let cityName = UNKNOWN_CITY;
     let longitude = 120.0;
+    let cityKnown = false;
+    let cityAlternatives = [];
     let dateTimeParsed = null;
     let timeSource = TIME_SOURCE.SELF;
 
@@ -405,12 +507,19 @@ export function parseBatchCases(text) {
     for (const token of tokens) {
       if (/^\d{12}$/.test(token) || /^\d{4}[-/.]/.test(token)) continue;
       if (['男', '女', '乾造', '坤造', '乾', '坤', '出生证', '家人口述', '客户自报'].includes(token)) continue;
-      // 城市查找测试
-      if (state.lookupCityFn) {
-        const foundCities = state.lookupCityFn(token);
-        if (foundCities.length > 0) {
-          cityName = foundCities[0].name;
-          longitude = foundCities[0].lng;
+      // 地名解析。原来直接取第一条：「朝阳」会静默落成辽宁朝阳市，
+      // 与北京朝阳区差 14 分钟时差，足够翻掉一个时辰，而且不吭声。
+      // 现在跨省重名会带着候选交给老师确认，绝不替他选。
+      if (state.resolveCityFn) {
+        const hit = state.resolveCityFn(token);
+        if (hit.city) {
+          // 「查不到」和「重名拿不准」是两回事，别混成一个标志位：
+          // 查不到 → 经度只能兜底 120，引擎报 CITY_UNKNOWN；
+          // 重名 → 经度是某个真实地方的，盘算得出来，只是可能选错人，交给待确认条。
+          cityName = hit.city.name;
+          longitude = hit.city.lng;
+          cityKnown = true;
+          cityAlternatives = hit.ambiguous ? hit.candidates.slice(0, 6) : [];
           continue;
         }
       }
@@ -419,18 +528,22 @@ export function parseBatchCases(text) {
       }
     }
 
-    parsed.push({
-      id: `case_${Date.now()}_${idx}`,
+    const record = {
       raw: line,
       name,
       gender,
       cityName,
       longitude,
+      cityKnown,
+      cityAlternatives,
       timeSource,
       parsedTime: dateTimeParsed,
       status: dateTimeParsed ? 'valid' : 'error',
       errorMsg: dateTimeParsed ? '' : '未能提取到有效出生时间（需 12 位数字或 YYYY-MM-DD HH:mm）',
-    });
+    };
+    // 与单个录入共用一套 id，两条路径录进来的同一个盘才会合成一条，裁定也才认得出
+    record.id = caseIdOf(record);
+    parsed.push(record);
   }
 
   return parsed;
@@ -442,7 +555,7 @@ export function parseBatchCases(text) {
 
 /** 执行排盘并更新当前状态 */
 export function runCompute() {
-  const { year, month, day, hour, minute, longitude, applyDst, applyTrueSolar, sect, timeFold, gender } = state.input;
+  const { year, month, day, hour, minute, longitude, applyDst, applyTrueSolar, sect, timeFold, gender, cityKnown } = state.input;
 
   try {
     const result = computeChart({
@@ -457,6 +570,7 @@ export function runCompute() {
       sect: Number(sect),
       timeFold,
       gender,
+      cityKnown: cityKnown !== false,
     });
 
     state.currentResult = result;
@@ -475,15 +589,23 @@ export function runCompute() {
 // 4. UI 渲染方法
 // ============================================================================
 
+/** 按 id 写入 innerHTML；元素不在就跳过，省得每处都写一遍 if */
+function setHtml(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
+}
+
 /** 综合渲染主入口 */
 function renderAll() {
   renderProfile();
   renderRisks();
+  renderCityConfirmBar();
   renderDualChartBanner();
   renderToolbarAndAudit();
   renderChartTable();
   renderVerdictForm();
-  renderCompare();
+  // 对照页要多算两张盘。它藏着的时候不算——切过去时 switchTab 会补上。
+  if (document.getElementById('tab-compare')?.classList.contains('active')) renderCompare();
   updateVerdictBadge();
 }
 
@@ -548,13 +670,17 @@ function renderRisks() {
   const hasWarn = risks.some((r) => r.level === RISK_LEVEL.WARN);
   riskBoxEl.className = `risk-box ${hasWarn ? 'risk-has-warn' : 'risk-has-info'}`;
 
-  let html = `<div class="risk-title">⚠️ 历法分歧风险提醒（老师重点复核）：</div><ul class="risk-list">`;
+  let html = `<div class="risk-title">⚠️ 排盘风险提醒（老师重点复核）：</div><ul class="risk-list">`;
   for (const r of risks) {
     const levelClass = r.level === RISK_LEVEL.WARN ? 'level-warn' : 'level-info';
     const affectsText = r.affects?.map((k) => PILLAR_NAMES[k] || k).join('、') || '全部';
+    // 出生地缺失说的是「输入不全」，不是「各家排法有争议」，徽章不能混用
+    const badge = r.kind === RISK_KIND.CITY_UNKNOWN
+      ? '出生地缺失'
+      : (r.level === RISK_LEVEL.WARN ? '重点分歧' : '需留心');
     html += `
       <li class="risk-item ${levelClass}">
-        <span class="risk-badge">${r.level === RISK_LEVEL.WARN ? '重点分歧' : '需留心'}</span>
+        <span class="risk-badge">${badge}</span>
         <span class="risk-affects">[影响${affectsText}]</span>
         <span class="risk-message">${escapeHtml(r.message)}</span>
       </li>
@@ -562,6 +688,65 @@ function renderRisks() {
   }
   html += `</ul>`;
   riskBoxEl.innerHTML = html;
+}
+
+/**
+ * 出生地跨省重名时的改选条。
+ *
+ * 批量粘贴里一个「朝阳」可能是北京朝阳区、辽宁朝阳市或长春朝阳区，经度差十几分钟，
+ * 足以翻掉一个时辰。工具会先按排序选一个把盘排出来，但必须当面说清楚选的是哪个、
+ * 还有哪些可选——替老师默默做主，就是在制造他找不出来的错。
+ */
+function renderCityConfirmBar() {
+  const el = document.getElementById('city-confirm-bar');
+  if (!el) return;
+
+  const alts = state.cases[state.activeCaseIndex]?.cityAlternatives ?? [];
+  if (alts.length === 0) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
+  const chips = alts.map((c) => {
+    const isCurrent = c.name === state.input.cityName;
+    return `<button type="button" class="city-confirm-alt ${isCurrent ? 'current' : ''}"
+      onclick="window.app.confirmCaseCity('${escapeHtml(c.name)}', ${c.lng})">
+      ${escapeHtml(c.name)} ${c.lng}°E${isCurrent ? ' ✓' : ''}</button>`;
+  }).join('');
+
+  el.style.display = 'block';
+  el.innerHTML = `<strong>出生地待确认</strong>：这个地名有多处同名，当前按
+    <strong>${escapeHtml(state.input.cityName)}</strong> 排的。不对就在下面改选，盘会立刻重排。
+    <div>${chips}</div>`;
+}
+
+/** 老师在待确认条上敲定出生地：改盘、改命例，并撤下这条 */
+export function confirmCaseCity(name, lng) {
+  const c = state.cases[state.activeCaseIndex];
+  if (c) {
+    const oldId = c.id;
+    c.cityName = name;
+    c.longitude = lng;
+    c.cityKnown = true;
+    c.cityAlternatives = [];
+
+    // 出生地是 caseIdOf 的一部分，改了地名就得换 id——否则 id 里记的还是旧地名，
+    // 下次提交裁定时 upsertCaseFromInput 会按新地名算出新 id、再建一条命例，
+    // 同一位客户在列表里裂成两条。这里是「订正」不是「换了个人」，所以就地改名，
+    // 并把已经指过来的裁定一起改过去。
+    c.id = caseIdOf(c);
+    if (c.id !== oldId) {
+      for (const v of state.verdicts) {
+        if (v.chartId === oldId) v.chartId = c.id;
+      }
+      persistVerdicts();
+    }
+
+    persistCases();
+    renderBatchList();
+  }
+  selectCity(name, lng);   // 内部会 runCompute，顺带刷新待确认条
 }
 
 /**
@@ -776,91 +961,281 @@ function renderVerdictForm() {
   const chart = getActiveChart();
   if (!chart) return;
 
-  const chartId = `${state.input.year}${String(state.input.month).padStart(2,'0')}${String(state.input.day).padStart(2,'0')}${String(state.input.hour).padStart(2,'0')}${String(state.input.minute).padStart(2,'0')}-${state.input.cityName.slice(0,6)}-${state.input.gender}`;
-
   // 渲染当前命盘概览
   const curSummaryEl = document.getElementById('verdict-chart-summary');
   if (curSummaryEl) {
-    curSummaryEl.innerText = `${state.input.name} · ${chart.ganZhi} · ${state.input.cityName}`;
+    curSummaryEl.innerText = `${state.input.name} · ${chart.ganZhi} · ${state.input.cityName} · ${chartOptionsLabel(currentChartOptions())}`;
   }
 }
 
-/** 渲染对照抽屉与对照页（优先级 5） */
-function renderCompare() {
-  const chart = getActiveChart();
-  if (!chart) return;
+/** 当前三个开关 */
+function currentSwitches() {
+  return {
+    applyTrueSolar: Boolean(state.input.applyTrueSolar),
+    applyDst: Boolean(state.input.applyDst),
+    sect: Number(state.input.sect),
+  };
+}
 
-  // 基准盘 = 不做任何校正，直接按钟表时排。用来让老师看清三个开关各改了什么，
-  // 不代表任何其他工具的输出。
-  const baselineResult = computeChart({
+/** 当前三个开关 + 双盘分支。裁定的 options 快照就是它。 */
+function currentChartOptions() {
+  const chart = getActiveChart();
+  return { ...currentSwitches(), timeFold: chart?.input?.timeFold ?? state.input.timeFold };
+}
+
+/** 把口径快照写成老师看得懂的一行 */
+function chartOptionsLabel(o) {
+  if (!o) return '口径未记录';
+  const parts = [
+    `真太阳时${o.applyTrueSolar ? '开' : '关'}`,
+    `夏令时${o.applyDst ? '开' : '关'}`,
+    Number(o.sect) === 2 ? '早晚子时' : '子初换日',
+  ];
+  if (o.timeFold === 'first') parts.push('夏令时重复时·前一遍');
+  if (o.timeFold === 'second') parts.push('夏令时重复时·后一遍');
+  return parts.join(' · ');
+}
+
+/**
+ * 裁定卡片上的命盘标签。优先用本机命例里的原始字段，
+ * 命例被删掉时退回从 chartId 里反解——总之别把机器 id 甩给老师看。
+ */
+function verdictChartLabel(v, caseById) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const found = caseById.get(v.chartId);
+  if (found && found.parsedTime) {
+    const t = found.parsedTime;
+    return `${found.name} · ${t.year}-${pad(t.month)}-${pad(t.day)} ${pad(t.hour)}:${pad(t.minute)} · ${found.cityName}`;
+  }
+
+  // 认 caseIdOf 的格式：出生时间-性别-出生地-姓名。认不出就原样摆出来，
+  // 别硬套着解——旧格式是「出生时间-姓名-性别」，套错会把姓名显示成出生地。
+  const m = String(v.chartId || '').match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})-(?:male|female)-(.*)-([^-]*)$/);
+  if (!m) return `${v.chartId || '（未记录）'}（旧版记录）`;
+  const [, y, mo, d, h, mi, place, who] = m;
+  return `${who} · ${y}-${mo}-${d} ${h}:${mi} · ${v.cityName || place}`;
+}
+
+/** 给四柱的天干/地支下拉填选项。选项是固定的，只在启动时填一次。 */
+function fillGanZhiSelects() {
+  for (const k of PILLAR_KEYS) {
+    const ganSel = document.getElementById(`verdict-gan-${k}`);
+    const zhiSel = document.getElementById(`verdict-zhi-${k}`);
+    if (ganSel && !ganSel.options.length) {
+      ganSel.innerHTML = '<option value="">天干</option>'
+        + GAN.map((g) => `<option value="${g}">${g}</option>`).join('');
+    }
+    if (zhiSel && !zhiSel.options.length) {
+      zhiSel.innerHTML = '<option value="">地支</option>'
+        + ZHI.map((z) => `<option value="${z}">${z}</option>`).join('');
+    }
+  }
+}
+
+/**
+ * 对照页要对照的那条口径。
+ *
+ * 原来固定是「三开关全关 vs 当前」。可默认三个开关就是全关的，两边必然一模一样，
+ * 页面写「两侧完全一致」，而上方风险条同时在喊「重点分歧，开与关所得时柱不同」——
+ * 老师看到的是自相矛盾。真正该并排的是**争议本身的两边**：这个盘因为哪条口径有分歧，
+ * 就把那条的开与关摆出来。
+ */
+const COMPARE_DIMENSIONS = [
+  {
+    kind: RISK_KIND.TRUE_SOLAR,
+    cause: '真太阳时校正',
+    left: { name: '不做真太阳时校正', patch: { applyTrueSolar: false } },
+    right: { name: '做真太阳时校正', patch: { applyTrueSolar: true } },
+  },
+  {
+    kind: RISK_KIND.ZI_SHI,
+    cause: '子时换日流派',
+    left: { name: '流派1 · 子初换日', patch: { sect: 1 } },
+    right: { name: '流派2 · 早晚子时', patch: { sect: 2 } },
+  },
+  {
+    kind: RISK_KIND.DST,
+    cause: '夏令时回拨',
+    left: { name: '不回拨夏令时', patch: { applyDst: false } },
+    right: { name: '回拨夏令时（−1 小时）', patch: { applyDst: true } },
+  },
+];
+
+// 这个盘不在任何已知分歧区时的兜底：仍然让老师看清三个开关合起来改了什么
+const COMPARE_FALLBACK = {
+  kind: null,
+  cause: '当前开关',
+  left: { name: '未校正（按钟表时直接排）', patch: { applyTrueSolar: false, applyDst: false, sect: 1 } },
+  right: { name: '当前口径', patch: {} },
+};
+
+/** 老师在对照页点了哪一边（尚未确认提交） */
+let comparePendingSide = null;
+
+/** 按盘上的风险挑一条来对照，挑不出就走兜底 */
+function pickCompareDimension(chart) {
+  const kinds = new Set((chart.risks || []).map((r) => r.kind));
+  return COMPARE_DIMENSIONS.find((d) => kinds.has(d.kind)) ?? COMPARE_FALLBACK;
+}
+
+/** 在当前输入基础上套一组开关，算出那一侧的盘与口径快照 */
+function computeSide(patch) {
+  const options = { ...currentSwitches(), ...patch };
+  const result = computeChart({
     year: state.input.year,
     month: state.input.month,
     day: state.input.day,
     hour: state.input.hour,
     minute: state.input.minute,
     longitude: Number(state.input.longitude),
-    applyDst: false,
-    applyTrueSolar: false,
-    sect: 1,
     gender: state.input.gender,
+    timeFold: state.input.timeFold,
+    cityKnown: state.input.cityKnown !== false,
+    ...options,
   });
-  const baseChart = baselineResult.charts[0];
+  // 夏令时重复小时会出双盘，跟着老师当前看的那一盘走
+  const chart = result.charts[state.activeChartIndex] ?? result.charts[0];
+  return { chart, options: { ...options, timeFold: chart.input.timeFold } };
+}
 
-  const basePillars = baseChart.pillars;
-  const currPillars = chart.pillars;
+/** 渲染对照页（优先级 5） */
+function renderCompare() {
+  const chart = getActiveChart();
+  if (!chart) return;
 
-  let baseHtml = '';
-  let currHtml = '';
-  let diffCount = 0;
+  const dim = pickCompareDimension(chart);
+  const left = computeSide(dim.left.patch);
+  const right = computeSide(dim.right.patch);
 
-  for (const k of PILLAR_KEYS) {
-    const isDiff = basePillars[k].ganZhi !== currPillars[k].ganZhi;
-    if (isDiff) diffCount++;
+  const diffKeys = PILLAR_KEYS.filter(
+    (k) => left.chart.pillars[k].ganZhi !== right.chart.pillars[k].ganZhi,
+  );
 
-    baseHtml += `
+  const column = (side, highlight) => PILLAR_KEYS.map((k) => {
+    const isDiff = diffKeys.includes(k);
+    return `
       <div class="comp-pillar-item ${isDiff ? 'comp-diff' : ''}">
         <span class="comp-k">${PILLAR_NAMES[k]}</span>
-        <span class="comp-v">${escapeHtml(basePillars[k].ganZhi)}</span>
+        <span class="comp-v ${isDiff && highlight ? 'highlight-cinnabar' : ''}">${escapeHtml(side.chart.pillars[k].ganZhi)}</span>
       </div>
     `;
-    currHtml += `
-      <div class="comp-pillar-item ${isDiff ? 'comp-diff' : ''}">
-        <span class="comp-k">${PILLAR_NAMES[k]}</span>
-        <span class="comp-v ${isDiff ? 'highlight-cinnabar' : ''}">${escapeHtml(currPillars[k].ganZhi)}</span>
-      </div>
-    `;
+  }).join('');
+
+  setHtml('compare-base-kicker', escapeHtml(dim.left.name));
+  setHtml('compare-curr-kicker', escapeHtml(dim.right.name));
+  setHtml('compare-base-pillars', column(left, false));
+  setHtml('compare-curr-pillars', column(right, true));
+
+  setHtml('compare-sub', diffKeys.length
+    ? `这个盘在<strong>${escapeHtml(dim.cause)}</strong>上存在争议，两种排法并排在下面，不同的柱标朱砂。
+       哪一套对由您判断，工具不替您裁定——但请告诉我们您按哪一套。`
+    : `这个盘按<strong>${escapeHtml(dim.cause)}</strong>的两种排法结果相同，没有需要您裁定的地方。`);
+
+  setHtml('compare-diff-explanation', diffKeys.length
+    ? `<div class="alert-cinnabar">● 两种排法有 <strong>${diffKeys.length}</strong> 处柱位不同（已朱砂高亮）：${
+        diffKeys.map((k) => PILLAR_NAMES[k]).join('、')}。</div>
+       <div class="note-desc"><strong>由什么引起</strong>：${escapeHtml(dim.cause)}。</div>`
+    : `<div class="alert-green">● 两种排法结果<strong>完全一致</strong>。</div>
+       <div class="note-desc">神煞条目差异属「表不同」，不是历法或口径错误。</div>`);
+
+  renderCompareActions(dim, left, right, diffKeys);
+}
+
+/**
+ * 一键裁定。老师在这一页要回答的就是「你按哪一套排」——
+ * 这是整个试用最值钱的一次点击，原来这页却连个提交入口都没有，
+ * 文案还写着「请在下方直接写出正确的四柱」，而下方什么都没有。
+ */
+function renderCompareActions(dim, left, right, diffKeys) {
+  const el = document.getElementById('compare-actions');
+  if (!el) return;
+
+  if (diffKeys.length === 0) {
+    el.innerHTML = '';
+    comparePendingSide = null;
+    return;
   }
 
-  const baseValEl = document.getElementById('compare-base-pillars');
-  if (baseValEl) baseValEl.innerHTML = baseHtml;
+  const picked = comparePendingSide;
+  const sideName = picked === 'left' ? dim.left.name : dim.right.name;
 
-  const currValEl = document.getElementById('compare-curr-pillars');
-  if (currValEl) currValEl.innerHTML = currHtml;
-
-
-  // 列出当前开关里哪些真的参与了计算，作为分歧成因
-  const causes = [];
-  if (state.input.applyTrueSolar) causes.push('真太阳时校正');
-  if (state.input.applyDst) causes.push('夏令时回拨');
-  if (state.input.sect === 2) causes.push('早晚子时流派');
-
-  const descEl = document.getElementById('compare-diff-explanation');
-  if (descEl) {
-    if (diffCount === 0) {
-      descEl.innerHTML = `
-        <div class="alert-green">● 当前开关未改变四柱，两侧<strong>完全一致</strong>。</div>
-        <div class="note-desc">神煞条目差异属「表不同」，不是历法或口径错误。</div>
-      `;
-    } else {
-      descEl.innerHTML = `
-        <div class="alert-cinnabar">● 发现 <strong>${diffCount}</strong> 处柱位口径分歧（已朱砂高亮）。</div>
-        <div class="note-desc">
-          <strong>由什么引起</strong>：${causes.length ? causes.join('、') : '子时换日流派'}。
-          哪一套对由您判断，工具<strong>不替您裁定</strong>；若两边都不对，请在下方直接写出正确的四柱。
+  el.innerHTML = `
+    <div class="compare-pick-row">
+      <button type="button" class="compare-pick-btn ${picked === 'left' ? 'active' : ''}"
+        onclick="window.app.pickCompareSide('left')">我按左边这套排<br>${escapeHtml(dim.left.name)}</button>
+      <button type="button" class="compare-pick-btn ${picked === 'right' ? 'active' : ''}"
+        onclick="window.app.pickCompareSide('right')">我按右边这套排<br>${escapeHtml(dim.right.name)}</button>
+    </div>
+    <button type="button" class="compare-pick-none" onclick="window.app.goWriteVerdict()">
+      两边都不对，我自己写正确的四柱 →
+    </button>
+    ${picked ? `
+      <div class="compare-confirm">
+        您选的是「<strong>${escapeHtml(sideName)}</strong>」，四柱为
+        <strong>${escapeHtml((picked === 'left' ? left : right).chart.ganZhi)}</strong>。
+        还差一项——这个盘的出生时间是哪来的？
+        <div class="radio-group">
+          <label><input type="radio" name="compare-time-source" value="出生证"> 出生证</label>
+          <label><input type="radio" name="compare-time-source" value="家人口述"> 家人口述</label>
+          <label><input type="radio" name="compare-time-source" value="客户自报"> 客户自报</label>
         </div>
-      `;
-    }
+        <button type="button" class="primary-btn" onclick="window.app.submitCompareVerdict()">确认并记录</button>
+      </div>` : ''}
+  `;
+}
+
+/** 老师点了某一边：先把主盘切到这套口径，让他看到的就是他选的 */
+export function pickCompareSide(side) {
+  comparePendingSide = side;
+  const chart = getActiveChart();
+  if (!chart) return;
+
+  const dim = pickCompareDimension(chart);
+  Object.assign(state.input, side === 'left' ? dim.left.patch : dim.right.patch);
+  runCompute();   // 内部会重跑 renderCompare，把按钮的选中态一并刷新
+}
+
+/** 确认提交对照页的一键裁定 */
+export function submitCompareVerdict() {
+  if (!comparePendingSide) return;
+  const chart = getActiveChart();
+  if (!chart) return;
+
+  const sourceEl = document.querySelector('input[name="compare-time-source"]:checked');
+  if (!sourceEl) {
+    showToast('❌ 请先选出生时间的来源：出生证 / 家人口述 / 客户自报');
+    return;
   }
+
+  // 主盘此刻已经切到老师选的那一套（见 pickCompareSide），
+  // 所以「他认可当前这个盘」= 无分歧，口径快照记的就是他选的这套。
+  recordVerdict({
+    disputedPillars: [],
+    teacherGanZhi: {},
+    ourGanZhi: chart.ganZhi,
+    options: currentChartOptions(),
+    cityName: state.input.cityName,
+    longitude: Number(state.input.longitude),
+    school: '',
+    timeSource: sourceEl.value,
+    reason: '在口径对照页选定',
+  });
+
+  comparePendingSide = null;
+  renderCompare();
+  showToast('✅ 已记下您按这一套排。可在「老师裁定」里查看');
+}
+
+/** 两边都不对：跳到裁定表单，别把老师留在一句没有出口的提示里 */
+export function goWriteVerdict() {
+  comparePendingSide = null;
+  switchTab('chart');
+  // 等一帧：switchTab 刚把这个 pane 显示出来，同帧内它的位置还没算出来。
+  // 不用 behavior:'smooth'——实测它在这里不生效，scrollY 纹丝不动；
+  // 而且这是一次明确的跳转，直接到位比动画更稳。
+  requestAnimationFrame(() => {
+    document.getElementById('verdict-form-section')?.scrollIntoView({ block: 'start' });
+  });
 }
 
 /** 渲染裁定历史列表 */
@@ -881,12 +1256,16 @@ export function renderVerdictsList() {
   let html = '';
   const total = state.verdicts.length;
   const consistent = state.verdicts.filter((v) => v.disputedPillars.length === 0).length;
-  const consistentPercent = total > 0 ? ((consistent / total) * 100).toFixed(1) : '0.0';
 
+  // 命例索引建一次给所有卡片共用，别在每张卡里线性查全表
+  const caseById = new Map(state.cases.map((c) => [c.id, c]));
+
+  // 只报进度，不报「一致率」：那是我们复盘用的指标，样本小的时候还容易让老师误会
+  // 自己在跟工具较劲。老师只需要知道自己留了多少条痕。
   html += `
     <div class="verdict-stats-bar">
       <span>已沉淀 <strong>${total}</strong> 份裁定</span>
-      <span>与我们一致率：<strong>${consistentPercent}%</strong>（${consistent}/${total}）</span>
+      <span>其中标注无分歧 <strong>${consistent}</strong> 份</span>
     </div>
   `;
 
@@ -904,15 +1283,19 @@ export function renderVerdictsList() {
           <button class="verdict-del-btn" onclick="window.app.deleteVerdict(${idx})">删除</button>
         </div>
         <div class="verdict-card-body">
-          <div class="verdict-prop"><strong>命盘识别</strong>：${escapeHtml(v.chartId)}</div>
+          <div class="verdict-prop"><strong>命盘</strong>：${escapeHtml(verdictChartLabel(v, caseById))}</div>
+          ${v.ourGanZhi ? `<div class="verdict-prop"><strong>我们排的</strong>：${escapeHtml(v.ourGanZhi)}</div>` : ''}
+          <div class="verdict-prop"><strong>当时口径</strong>：${escapeHtml(chartOptionsLabel(v.options))}</div>
           ${
             !isConsistent
               ? `<div class="verdict-prop"><strong>分歧柱位</strong>：${v.disputedPillars.map((k) => PILLAR_NAMES[k] || k).join('、')}</div>
-                 <div class="verdict-prop"><strong>老师认定干支</strong>：${JSON.stringify(v.teacherGanZhi)}</div>`
+                 <div class="verdict-prop"><strong>老师认定</strong>：${escapeHtml(
+                   v.disputedPillars.map((k) => `${PILLAR_NAMES[k] || k} ${v.teacherGanZhi?.[k] || '未填'}`).join('，'),
+                 )}</div>`
               : ''
           }
-          <div class="verdict-prop"><strong>时间来源（必填项）</strong>：<span class="source-tag">${escapeHtml(v.timeSource)}</span></div>
-          <div class="verdict-prop"><strong>依据流派</strong>：${escapeHtml(v.school || '默认 / 未填')}</div>
+          <div class="verdict-prop"><strong>时间来源</strong>：<span class="source-tag">${escapeHtml(v.timeSource)}</span></div>
+          <div class="verdict-prop"><strong>依据流派</strong>：${escapeHtml(v.school || '未填')}</div>
           ${v.reason ? `<div class="verdict-prop"><strong>裁定理由</strong>：${escapeHtml(v.reason)}</div>` : ''}
         </div>
       </div>
@@ -927,14 +1310,14 @@ export function renderBatchList() {
   const listEl = document.getElementById('batch-cases-list');
   if (!listEl) return;
 
-  if (state.batchCases.length === 0) {
-    listEl.innerHTML = '<div class="empty-sub">尚未解析命例，请在上方输入框粘贴后点击「批量解析」。</div>';
+  if (state.cases.length === 0) {
+    listEl.innerHTML = '<div class="empty-sub">尚无命例。可在「单个录入」逐个录，也可在上方粘贴后点「解析并追加到列表」。</div>';
     return;
   }
 
-  let html = `<div class="batch-count-bar">已解析 <strong>${state.batchCases.length}</strong> 条命例（点击任一条立即载入排盘）：</div>`;
+  let html = `<div class="batch-count-bar">本机命例 <strong>${state.cases.length}</strong> 条（单个录入与批量粘贴都在这里，点击任一条载入排盘）：</div>`;
 
-  state.batchCases.forEach((c, idx) => {
+  state.cases.forEach((c, idx) => {
     const isActive = idx === state.activeCaseIndex;
     const timeStr = c.parsedTime
       ? `${c.parsedTime.year}-${String(c.parsedTime.month).padStart(2,'0')}-${String(c.parsedTime.day).padStart(2,'0')} ${String(c.parsedTime.hour).padStart(2,'0')}:${String(c.parsedTime.minute).padStart(2,'0')}`
@@ -951,7 +1334,10 @@ export function renderBatchList() {
           <button type="button" class="batch-item-del" title="从列表中移除"
             onclick="event.stopPropagation(); window.app.removeBatchCase(${idx})">×</button>
         </div>
-        <div class="batch-item-time">${timeStr} · 来源：${escapeHtml(c.timeSource)}</div>
+        <div class="batch-item-time">${timeStr} · 来源：${escapeHtml(c.timeSource || '未填')}${
+          c.cityAlternatives?.length ? ' · <strong>出生地待确认</strong>'
+            : (c.cityKnown === false ? ' · <strong>出生地未知</strong>' : '')
+        }</div>
         ${c.status === 'error' ? `<div class="batch-item-err">${c.errorMsg}</div>` : ''}
       </div>
     `;
@@ -1072,6 +1458,11 @@ export function apply12DigitInput() {
   const genderEl = document.querySelector('input[name="quick-gender"]:checked');
   if (genderEl) state.input.gender = genderEl.value;
 
+  comparePendingSide = null;   // 换了盘，对照页上一次的选择作废
+
+  // 先落命例再排盘：老师从这条路径录入的盘也要能同步上去，否则裁定收上来无从复现
+  upsertCaseFromInput();
+
   runCompute();
   switchTab('chart');
   showToast(`已成功录入并排盘：${res.formatted}`);
@@ -1163,6 +1554,7 @@ function renderCityPrecisionHint(name) {
 export function selectCity(name, lng) {
   state.input.cityName = name;
   state.input.longitude = lng;
+  state.input.cityKnown = true;
   renderCityPrecisionHint(name);
 
   const cityInput = document.getElementById('city-search-input');
@@ -1202,13 +1594,13 @@ export async function applyBatchInput() {
     return;
   }
 
-  // 按原始行去重：跳过列表里已有的，以及本批内部的重复行
-  const seen = new Set(state.batchCases.map((c) => normalizeRawLine(c.raw)));
+  // 按命例 id 去重：同一个盘换个写法粘第二遍（改了空格、换成 YYYY-MM-DD 格式）也认得出，
+  // 比按原始行去重严实；单个录入过的盘再粘一遍同样会被认出来
+  const seen = new Set(state.cases.map((c) => c.id));
   const fresh = [];
   for (const c of cases) {
-    const key = normalizeRawLine(c.raw);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (seen.has(c.id)) continue;
+    seen.add(c.id);
     fresh.push(c);
   }
 
@@ -1219,10 +1611,10 @@ export async function applyBatchInput() {
   }
 
   // 追加到现有列表末尾，不覆盖之前解析过的命例
-  const startIndex = state.batchCases.length;
+  const startIndex = state.cases.length;
   const hadActiveCase = state.activeCaseIndex >= 0;
-  state.batchCases = state.batchCases.concat(fresh);
-  persistBatchCases();
+  state.cases = state.cases.concat(fresh);
+  persistCases();
 
   // 输入框已消费，清空以便继续粘下一批
   textEl.value = '';
@@ -1237,14 +1629,14 @@ export async function applyBatchInput() {
   }
 
   const skipTip = skipped > 0 ? `，跳过 ${skipped} 条重复` : '';
-  showToast(`已追加 ${fresh.length} 条命例${skipTip}，列表共 ${state.batchCases.length} 条`);
+  showToast(`已追加 ${fresh.length} 条命例${skipTip}，列表共 ${state.cases.length} 条`);
 }
 
 /** 删除批量列表中的单条命例 */
 export function removeBatchCase(index) {
-  if (!state.batchCases[index]) return;
+  if (!state.cases[index]) return;
 
-  state.batchCases.splice(index, 1);
+  state.cases.splice(index, 1);
   // 删掉当前排盘那条则取消高亮，删掉它前面的则整体前移一位
   if (index === state.activeCaseIndex) {
     state.activeCaseIndex = -1;
@@ -1252,17 +1644,17 @@ export function removeBatchCase(index) {
     state.activeCaseIndex -= 1;
   }
 
-  persistBatchCases();
+  persistCases();
   renderBatchList();
 }
 
 /** 清空批量命例列表 */
 export function clearBatchCases() {
-  if (state.batchCases.length === 0) return;
+  if (state.cases.length === 0) return;
   if (!confirm('确定清空批量命例列表吗？此操作不可恢复！')) return;
-  state.batchCases = [];
+  state.cases = [];
   state.activeCaseIndex = -1;
-  persistBatchCases();
+  persistCases();
   renderBatchList();
   showToast('已清空批量命例列表');
 }
@@ -1286,7 +1678,7 @@ export async function loadSampleCases() {
 
 /** 选中并排特定批次命例 */
 export function selectBatchCase(index) {
-  const c = state.batchCases[index];
+  const c = state.cases[index];
   if (!c) return;
 
   if (c.status === 'error' || !c.parsedTime) {
@@ -1339,6 +1731,8 @@ function loadCaseToChart(c, index) {
   state.input.gender = c.gender;
   state.input.cityName = c.cityName;
   state.input.longitude = c.longitude;
+  state.input.cityKnown = c.cityKnown !== false;
+  comparePendingSide = null;
   Object.assign(state.input, c.parsedTime);
 
   syncQuickInputForm();
@@ -1367,13 +1761,21 @@ export function submitVerdict() {
   if (!isConsistentChecked) {
     for (const k of PILLAR_KEYS) {
       const chk = document.getElementById(`verdict-pillar-${k}`);
-      if (chk && chk.checked) {
-        disputedPillars.push(k);
-        const valInput = document.getElementById(`verdict-gz-${k}`);
-        if (valInput && valInput.value.trim()) {
-          teacherGanZhi[k] = valInput.value.trim();
-        }
+      if (!chk || !chk.checked) continue;
+      disputedPillars.push(k);
+
+      // 勾了「这一柱排错了」却不说对的是什么，这条裁定就没有分析价值——不许提交
+      const gan = document.getElementById(`verdict-gan-${k}`)?.value || '';
+      const zhi = document.getElementById(`verdict-zhi-${k}`)?.value || '';
+      if (!gan || !zhi) {
+        showToast(`❌ 请填写${PILLAR_NAMES[k]}您认为正确的干支——只勾"有分歧"我们不知道该改成什么`);
+        return;
       }
+      if (!isValidGanZhi(gan, zhi)) {
+        showToast(`❌ ${PILLAR_NAMES[k]}「${gan}${zhi}」不在六十甲子内（阳干只配阳支、阴干只配阴支），请重选`);
+        return;
+      }
+      teacherGanZhi[k] = `${gan}${zhi}`;
     }
 
     if (disputedPillars.length === 0) {
@@ -1393,27 +1795,41 @@ export function submitVerdict() {
   const reasonInput = document.getElementById('verdict-reason-input');
   const reason = reasonInput ? reasonInput.value.trim() : '';
 
-  const chartId = `${state.input.year}${String(state.input.month).padStart(2,'0')}${String(state.input.day).padStart(2,'0')}${String(state.input.hour).padStart(2,'0')}${String(state.input.minute).padStart(2,'0')}-${state.input.name}-${state.input.gender}`;
-
-  // 构建符合契约 contract.js 的 Verdict 对象
-  const verdict = {
-    id: newId(),
-    chartId,
+  recordVerdict({
     disputedPillars,
     teacherGanZhi,
+    ourGanZhi: chart.ganZhi,
+    options: currentChartOptions(),
+    cityName: state.input.cityName,
+    longitude: Number(state.input.longitude),
     school,
     timeSource,
     reason,
-    createdAt: new Date().toISOString(),
-  };
-
-  state.verdicts.push(verdict);
-  persistVerdicts();
+  });
 
   // 清空表单
   resetVerdictForm();
 
-  showToast('✅ 老师裁定已当场记录并存入本地！可在「裁定记录」随时导出');
+  showToast('✅ 已记录这条裁定，可在「老师裁定」里查看与导出');
+}
+
+/**
+ * 落一条裁定。裁定表单与对照页的一键裁定共用这一处，
+ * id / chartId / createdAt 的口径只在这里定义一次。
+ *
+ * 裁定必须挂在一条真实存在的命例上——老师可能一路没点过「立即解析并排盘」
+ * （比如只切了开关就直接裁定），这里补一次，保证服务端两张表对得上。
+ */
+function recordVerdict(fields) {
+  const verdict = {
+    id: newId(),
+    chartId: upsertCaseFromInput(),
+    createdAt: new Date().toISOString(),
+    ...fields,
+  };
+  state.verdicts.push(verdict);
+  persistVerdicts();
+  return verdict;
 }
 
 /** 重置裁定表单 */
@@ -1424,14 +1840,26 @@ function resetVerdictForm() {
   for (const k of PILLAR_KEYS) {
     const chk = document.getElementById(`verdict-pillar-${k}`);
     if (chk) chk.checked = false;
-    const gzInp = document.getElementById(`verdict-gz-${k}`);
-    if (gzInp) gzInp.value = '';
+    for (const part of ['gan', 'zhi']) {
+      const sel = document.getElementById(`verdict-${part}-${k}`);
+      if (sel) sel.value = '';
+    }
     const group = document.getElementById(`verdict-group-${k}`);
     if (group) group.style.display = 'none';
   }
 
   const reasonInput = document.getElementById('verdict-reason-input');
   if (reasonInput) reasonInput.value = '';
+
+  // 时间来源与依据流派刻意不预选、提交后也复位：
+  // 预选等于替老师答了，落库后分不清「他选了出生证」和「他没管这一栏」
+  for (const radio of document.querySelectorAll('input[name="verdict-time-source"]')) {
+    radio.checked = false;
+  }
+  const schoolSelect = document.getElementById('verdict-school-select');
+  if (schoolSelect) schoolSelect.value = '';
+  const schoolCustom = document.getElementById('verdict-school-custom');
+  if (schoolCustom) schoolCustom.value = '';
 }
 
 /** 勾选「与我们一致」时自动取消其他柱 */
@@ -1550,6 +1978,7 @@ if (typeof window !== 'undefined') {
       apply12DigitInput,
       onCitySearchInput,
       selectCity,
+      confirmCaseCity,
       applyBatchInput,
       loadSampleCases,
       clearBatchCases,
@@ -1558,6 +1987,9 @@ if (typeof window !== 'undefined') {
       submitVerdict,
       onConsistentToggle,
       onDisputedPillarToggle,
+      pickCompareSide,
+      submitCompareVerdict,
+      goWriteVerdict,
       exportVerdictsJson,
       deleteVerdict,
       clearAllVerdicts,
@@ -1610,6 +2042,8 @@ if (typeof window !== 'undefined') {
         }
       });
     }
+
+    fillGanZhiSelects();
 
     // 运行初次排盘（默认 Alanzhou 黄金用例 1996-08-10 12:03）
     runCompute();
