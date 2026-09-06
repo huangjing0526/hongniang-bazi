@@ -106,6 +106,8 @@ export const TIME_SOURCE = /** @type {const} */ ({
 // 干支两表与合法性判据从 tables.js 转出。web 侧的裁定表单要用它们做下拉与校验，
 // 但不该伸手进引擎内部，也不该自己抄一份抄错——统一从契约这道门出去。
 export { GAN, ZHI, isValidGanZhi } from './tables.js';
+// 待老师确认表源的神煞（裁定表单的「神煞表源异议」选项），同样不让 web 伸手进引擎内部
+export { PENDING_SHENSHA } from './shensha.js';
 
 /**
  * 排盘口径快照。裁定必须带上它，否则事后无法复现老师当时看到的是哪一个盘：

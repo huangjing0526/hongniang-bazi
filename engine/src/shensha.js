@@ -40,6 +40,9 @@ const YIN_YANG_ERROR = new Set(['丙子','丁丑','戊寅','辛卯','壬辰','�
 // 阴干羊刃至少三派且结果互不相同，本表选了逆行一派，不该默认当唯一答案。
 const PENDING = new Set(['德秀贵人', '福星贵人', '学堂', '羊刃']);
 
+/** 待老师确认表源的神煞，带各自的分歧说明。裁定表单据此列「神煞表源异议」的选项。 */
+export const PENDING_SHENSHA = [...PENDING].map((name) => ({ name, source: SOURCES[name] }));
+
 function groupTarget(ruleName, reference) {
   return Object.entries(GROUP_RULES[ruleName]).find(([group]) => group.includes(reference))?.[1];
 }

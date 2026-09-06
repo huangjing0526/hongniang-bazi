@@ -152,6 +152,84 @@ body::before {
 }
 .sync-status.sync-clickable { cursor: pointer; }
 
+/* 神煞口诀浮层。遮罩 + 底部卡片，手机上像抽屉，电脑上居中 */
+.shensha-pop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  background: rgba(28,25,22,.42);
+  align-items: flex-end;
+  justify-content: center;
+  padding: 20px;
+}
+.shensha-pop.open { display: flex; }
+@media (min-width: 760px) { .shensha-pop { align-items: center; } }
+.shensha-pop-card {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 18px 20px 16px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--seal-gold);
+  box-shadow: 0 18px 50px rgba(28,25,22,.28);
+  font-size: 13px;
+  line-height: 1.75;
+}
+.shensha-pop-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: none;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ink-5);
+  cursor: pointer;
+}
+.shensha-pop-title {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--seal-gold);
+  margin-bottom: 6px;
+  padding-right: 20px;
+}
+.shensha-pop-pending {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--cinnabar);
+  border: 1px solid var(--cinnabar);
+  padding: 0 5px;
+  margin-left: 6px;
+}
+.shensha-pop-source { color: var(--ink-3); }
+.shensha-pop-source strong { color: var(--cinnabar); }
+.shensha-pop-dispute {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px;
+  border: 1px solid var(--cinnabar);
+  background: var(--paper);
+  color: var(--cinnabar);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* 裁定卡片里的神煞异议折叠段 */
+.verdict-shensha summary { cursor: pointer; list-style: none; }
+.verdict-shensha summary::before { content: "▸ "; color: var(--ink-5); }
+.verdict-shensha[open] summary::before { content: "▾ "; }
+.verdict-shensha summary::-webkit-details-marker { display: none; }
+.verdict-shensha .disputed-pillars-grid { margin-top: 6px; }
+.verdict-shensha .text-input { margin-top: 6px; }
+
 /* 同步设置浮层：未登记时填称呼，已登记时看专属链接 */
 .sync-panel {
   display: none;
@@ -883,7 +961,7 @@ body::before {
   margin: -4px 0 10px;
 }
 .verdict-judged-line:empty { display: none; }
-.verdict-judged-line a { color: var(--wood); margin-left: 4px; }
+.verdict-judged-line a { color: var(--wood); margin-left: 10px; }
 
 .batch-item-time {
   font-size: 11px;
@@ -1544,6 +1622,14 @@ Alanzhou 199608101203 兰州 坤造 出生证
       <input type="text" id="verdict-school-custom" class="text-input" placeholder="若选自定，在此填写流派名称" style="margin-top:4px;">
     </div>
 
+    <!-- 神煞表源异议：可选、折叠。四条带星神煞各家表不一样，请老师说该用哪一派。
+         选项由 fillShenShaOptions 按引擎的 PENDING 表填。 -->
+    <details class="input-row verdict-shensha" id="verdict-shensha-details">
+      <summary class="input-label">神煞表源异议（可选）<span class="input-label-hint">盘上带 * 的四条，告诉我们该用哪一派</span></summary>
+      <div class="disputed-pillars-grid" id="verdict-shensha-options"></div>
+      <input type="text" id="verdict-shensha-note" class="text-input" placeholder="例如：羊刃阴干应按顺行，乙刃在辰">
+    </details>
+
     <div class="input-row">
       <label class="input-label" for="verdict-reason-input">一句话裁定理由</label>
       <input type="text" id="verdict-reason-input" class="text-input" placeholder="例如：客户反馈巳时出生，家人口述午时但真太阳时应为巳时">
@@ -1638,6 +1724,14 @@ Alanzhou 199608101203 兰州 坤造 出生证
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- 神煞口诀浮层：点遮罩或 × 关闭，不自动消失 -->
+<div id="shensha-pop" class="shensha-pop" onclick="if (event.target === this) window.app.closeShenShaPop()">
+  <div class="shensha-pop-card">
+    <button type="button" class="shensha-pop-close" aria-label="关闭" onclick="window.app.closeShenShaPop()">×</button>
+    <div id="shensha-pop-body"></div>
   </div>
 </div>
 

@@ -1,8 +1,8 @@
 // cloud/src/api.mjs 的数据库层，用 node:sqlite 实现。
 //
-// 只暴露四个接口：prepare / bind / first / batch。这个形状是从 Cloudflare D1 来的
+// 只暴露五个接口：prepare / bind / first / all / batch。这个形状是从 Cloudflare D1 来的
 // ——早先同一份 api.mjs 要在 Worker 和自有服务器上都能跑。Worker 那条线已移除
-// （见 api.mjs 顶部），形状保留：不多不少四个方法，换实现时要对齐的东西最少。
+// （见 api.mjs 顶部），形状保留：就这几个方法，换实现时要对齐的东西最少。
 // 类名里的 D1 是这段来历的痕迹，不代表还有 Cloudflare 的依赖。
 
 import { DatabaseSync } from 'node:sqlite';
@@ -24,6 +24,11 @@ class SqliteStatement {
   /** D1 的 first()：取第一行，没有则 null */
   async first() {
     return this.db.prepare(this.sql).get(...this.args) ?? null;
+  }
+
+  /** D1 的 all()：取全部行（只取 results，不带 D1 的 meta） */
+  async all() {
+    return this.db.prepare(this.sql).all(...this.args);
   }
 
   run() {

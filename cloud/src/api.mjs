@@ -183,20 +183,30 @@ async function handleRegister(request, env) {
   return ok({ token, name });
 }
 
+// cases.birth_at 的格式 'YYYY-MM-DD HH:mm'。写库与拉取各用一头，改格式两头一起改。
+function formatBirthAt(t) {
+  if (!t || typeof t !== 'object') return null;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${t.year}-${pad(t.month)}-${pad(t.day)} ${pad(t.hour)}:${pad(t.minute)}`;
+}
+
+function parseBirthAt(str) {
+  const m = String(str || '').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+  return m ? { year: +m[1], month: +m[2], day: +m[3], hour: +m[4], minute: +m[5] } : null;
+}
+
 function caseStatement(env, teacherId, item, now) {
   if (item === null || typeof item !== 'object') throw new ApiError(400, 4005, '命例格式不正确');
-  const birth = item.parsedTime && typeof item.parsedTime === 'object'
-    ? `${item.parsedTime.year}-${String(item.parsedTime.month).padStart(2, '0')}-${String(item.parsedTime.day).padStart(2, '0')} ${String(item.parsedTime.hour).padStart(2, '0')}:${String(item.parsedTime.minute).padStart(2, '0')}`
-    : null;
+  const birth = formatBirthAt(item.parsedTime);
 
   return env.DB.prepare(
-    `INSERT INTO cases (teacher_id, id, name, gender, city_name, longitude, birth_at, time_source, raw, status, synced_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO cases (teacher_id, id, name, gender, city_name, longitude, birth_at, time_source, raw, status, city_known, synced_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (teacher_id, id) DO UPDATE SET
        name = excluded.name, gender = excluded.gender, city_name = excluded.city_name,
        longitude = excluded.longitude, birth_at = excluded.birth_at,
        time_source = excluded.time_source, raw = excluded.raw,
-       status = excluded.status, synced_at = excluded.synced_at`,
+       status = excluded.status, city_known = excluded.city_known, synced_at = excluded.synced_at`,
   ).bind(
     teacherId,
     // 120 与 web/app.js 的 CASE_ID_MAX 对齐，改一边要同时改另一边
@@ -209,6 +219,8 @@ function caseStatement(env, teacherId, item, now) {
     text(item.timeSource, 'case.timeSource', { maxLength: 64 }),
     text(item.raw, 'case.raw', { maxLength: 500 }),
     text(item.status, 'case.status', { maxLength: 32 }),
+    // 老师端没带这个字段（0004 之前的客户端）就存 NULL，拉取时再推断
+    typeof item.cityKnown === 'boolean' ? Number(item.cityKnown) : null,
     now,
   );
 }
@@ -219,14 +231,15 @@ function verdictStatement(env, teacherId, item, now) {
   // our_gan_zhi / options / city_name / longitude 是 0002 补的排盘上下文。
   // 缺了它们，一条裁定说不清老师当时看的是哪个口径下的盘，等于收了个寂寞。
   return env.DB.prepare(
-    `INSERT INTO verdicts (teacher_id, id, chart_id, disputed_pillars, teacher_gan_zhi, school, time_source, reason, created_at, our_gan_zhi, options, city_name, longitude, synced_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO verdicts (teacher_id, id, chart_id, disputed_pillars, teacher_gan_zhi, school, time_source, reason, created_at, our_gan_zhi, options, city_name, longitude, shensha_disputed, shensha_note, synced_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (teacher_id, id) DO UPDATE SET
        chart_id = excluded.chart_id, disputed_pillars = excluded.disputed_pillars,
        teacher_gan_zhi = excluded.teacher_gan_zhi, school = excluded.school,
        time_source = excluded.time_source, reason = excluded.reason,
        our_gan_zhi = excluded.our_gan_zhi, options = excluded.options,
        city_name = excluded.city_name, longitude = excluded.longitude,
+       shensha_disputed = excluded.shensha_disputed, shensha_note = excluded.shensha_note,
        synced_at = excluded.synced_at`,
   ).bind(
     teacherId,
@@ -242,6 +255,10 @@ function verdictStatement(env, teacherId, item, now) {
     item.options ? jsonField(item.options, 'verdict.options') : null,
     text(item.cityName, 'verdict.cityName', { maxLength: 120 }),
     Number.isFinite(item.longitude) ? item.longitude : null,
+    // 0004：神煞表源异议。旧客户端不带，存 NULL
+    Array.isArray(item.shenshaDisputed) && item.shenshaDisputed.length
+      ? jsonField(item.shenshaDisputed, 'verdict.shenshaDisputed') : null,
+    text(item.shenshaNote, 'verdict.shenshaNote'),
     now,
   );
 }
@@ -315,6 +332,77 @@ async function handleSync(request, env) {
   });
 }
 
+function parseJsonColumn(value, fallback) {
+  if (value === null || value === undefined) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+/** 数据库行 → 老师端的命例对象。字段名与 web/app.js 里 upsertCaseFromInput / parseBatchCases 写的一致 */
+function caseFromRow(row) {
+  const parsedTime = parseBirthAt(row.birth_at);
+  // 0004 之前的行没有 city_known，发 null 让老师端按占位地名推断——占位名的定义在那边
+  const cityKnown = row.city_known === null || row.city_known === undefined
+    ? null
+    : row.city_known === 1;
+  return {
+    id: row.id,
+    name: row.name ?? '',
+    gender: row.gender ?? 'male',
+    cityName: row.city_name ?? '',
+    longitude: Number.isFinite(row.longitude) ? row.longitude : 120,
+    cityKnown,
+    cityAlternatives: [],
+    timeSource: row.time_source ?? '',
+    raw: row.raw ?? '',
+    parsedTime,
+    status: row.status ?? (parsedTime ? 'valid' : 'error'),
+    errorMsg: parsedTime ? '' : '未能提取到有效出生时间（需 12 位数字或 YYYY-MM-DD HH:mm）',
+  };
+}
+
+/** 数据库行 → 老师端的裁定对象 */
+function verdictFromRow(row) {
+  return {
+    id: row.id,
+    chartId: row.chart_id,
+    createdAt: row.created_at,
+    disputedPillars: parseJsonColumn(row.disputed_pillars, []),
+    teacherGanZhi: parseJsonColumn(row.teacher_gan_zhi, {}),
+    ourGanZhi: row.our_gan_zhi ?? '',
+    options: parseJsonColumn(row.options, null),
+    cityName: row.city_name ?? '',
+    longitude: Number.isFinite(row.longitude) ? row.longitude : null,
+    school: row.school ?? '',
+    timeSource: row.time_source,
+    reason: row.reason ?? '',
+    shenshaDisputed: parseJsonColumn(row.shensha_disputed, []),
+    shenshaNote: row.shensha_note ?? '',
+  };
+}
+
+/**
+ * 拉取：把这位老师在服务端的全部命例与裁定发回去。
+ *
+ * 推送是全量的（见 handleSync），拉取也全量，量级几百条，不做游标。
+ * 合并规则在老师端：本机已有的 id 不动，服务端多出来的补进去——
+ * 这样换设备、或 Safari 清掉本机存储后，用专属链接打开就能接上之前的记录。
+ */
+async function handlePull(request, env) {
+  const teacher = await authenticate(request, env);
+  const caseRows = await env.DB
+    .prepare('SELECT * FROM cases WHERE teacher_id = ? ORDER BY synced_at').bind(teacher.id).all();
+  const verdictRows = await env.DB
+    .prepare('SELECT * FROM verdicts WHERE teacher_id = ? ORDER BY created_at').bind(teacher.id).all();
+  return ok({
+    cases: caseRows.map(caseFromRow),
+    verdicts: verdictRows.map(verdictFromRow),
+  });
+}
+
 async function handleMe(request, env) {
   const teacher = await authenticate(request, env);
   return ok({ id: teacher.id, name: teacher.name });
@@ -342,6 +430,10 @@ export async function handleApi(request, env) {
     if (pathname === '/api/sync') {
       if (request.method !== 'POST') throw new ApiError(405, 4051, '方法不允许');
       return await handleSync(request, env);
+    }
+    if (pathname === '/api/pull') {
+      if (request.method !== 'GET') throw new ApiError(405, 4051, '方法不允许');
+      return await handlePull(request, env);
     }
     throw new ApiError(404, 4041, '接口不存在');
   } catch (err) {

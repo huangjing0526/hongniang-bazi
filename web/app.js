@@ -14,6 +14,7 @@ import {
   GAN,
   ZHI,
   isValidGanZhi,
+  PENDING_SHENSHA,
 } from '../engine/src/contract.js';
 
 // 五行映射表：用于天干、地支、藏干着色
@@ -169,6 +170,10 @@ const TEACHER_NAME_KEY = 'bazi_teacher_name';
 // 只在**没有身份**时才读得到（有 token 时走的是同步状态那条线），所以拿到 token 时不必清它，
 // 清理集中在 signOutTeacher 一处。
 const LOCAL_ONLY_KEY = 'bazi_local_only';
+
+// 老师上次用的三个开关。习惯开真太阳时的老师不该每个盘都重新勾一遍；
+// 第一次打开仍是全关（与试用说明一致），之后跟着他上次的选择走。
+const SWITCHES_KEY = 'bazi_switches';
 
 // 与 cloud/src/api.mjs 里 case.id / verdict.chartId 的 maxLength 对齐。
 // 前端超了这个长度，服务端会整批 400——两边任一处要改，另一处必须跟着改。
@@ -527,6 +532,28 @@ function scheduleSync() {
   syncTimer = setTimeout(() => { syncTimer = null; runSync(); }, SYNC_DEBOUNCE_MS);
 }
 
+/**
+ * 带邀请码调一次同步接口，返回响应体的 data；推送与拉取共用。
+ * 401/403 是「邀请码没了」，跟网络不好是两回事：重试一万次也不会好，
+ * 这里直接标失效让老师看见「重新登记」，并返回 null 让调用方停手。
+ * 其它失败抛错，由调用方决定怎么提示。
+ */
+async function callSyncApi(path, init = {}) {
+  const resp = await fetch(path, {
+    ...init,
+    headers: { ...(init.headers || {}), 'x-teacher-token': state.teacher.token },
+  });
+  const body = await resp.json().catch(() => null);
+  if (resp.status === 401 || resp.status === 403) {
+    markTokenInvalid((body && body.message) || '邀请码已失效');
+    return null;
+  }
+  if (!resp.ok || !body || body.code !== 0) {
+    throw new Error((body && body.message) || `请求失败（HTTP ${resp.status}）`);
+  }
+  return body.data;
+}
+
 /** 全量推送本地命例与裁定；服务端按主键 upsert，重复推送无副作用 */
 async function runSync() {
   if (!canSync()) return;
@@ -541,9 +568,9 @@ async function runSync() {
     // 成功后只能清掉确认送达的这些，不能整个清空。
     const sentRetired = { cases: [...state.retired.cases], verdicts: [...state.retired.verdicts] };
 
-    const resp = await fetch('/api/sync', {
+    const data = await callSyncApi('/api/sync', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-teacher-token': state.teacher.token },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         cases: state.cases,
         verdicts: state.verdicts,
@@ -551,18 +578,7 @@ async function runSync() {
         retiredVerdicts: sentRetired.verdicts,
       }),
     });
-    const body = await resp.json().catch(() => null);
-
-    if (resp.status === 401 || resp.status === 403) {
-      // 邀请码没了。这跟「网络不好」是两回事：重试一万次也不会好，
-      // 得让老师看见「重新登记」，而不是永远挂着一句「稍后重试」。
-      markTokenInvalid((body && body.message) || '邀请码已失效');
-      return;
-    }
-    if (!resp.ok || !body || body.code !== 0) {
-      const message = (body && body.message) || `同步失败（HTTP ${resp.status}）`;
-      throw new Error(message);
-    }
+    if (!data) return;   // 邀请码失效，callSyncApi 已标记
 
     for (const kind of ['cases', 'verdicts']) {
       state.retired[kind] = state.retired[kind].filter((id) => !sentRetired[kind].includes(id));
@@ -572,7 +588,7 @@ async function runSync() {
 
     state.sync.status = 'ok';
     state.sync.lastError = '';
-    state.sync.lastSyncedAt = body.data.syncedAt;
+    state.sync.lastSyncedAt = data.syncedAt;
   } catch (err) {
     // 不静默吞掉：状态条会显示「待同步」，控制台留下原因
     console.error('同步失败，记录仍在本机保存:', err);
@@ -582,6 +598,58 @@ async function runSync() {
     syncing = false;
     renderSyncStatus();
     if (syncQueuedAgain) { syncQueuedAgain = false; scheduleSync(); }
+  }
+}
+
+/**
+ * 拉取：把服务端有、本机没有的命例与裁定补进来。
+ *
+ * 换设备、或 Safari 隔一阵清掉 localStorage 之后，用专属链接打开本机是空的；
+ * 没有这一步，「换台设备也能接着看」就是句空话。
+ *
+ * 合并规则**本机优先**：本机已有的 id 一律不动（本机是老师刚操作过的、更新），
+ * 只补服务端多出来的；本机退役名单里的 id 也不补——那是老师刚删、还没来得及推上去的。
+ * 拉完紧接着 runSync 把合并结果推回去，两边就齐了。
+ */
+async function pullFromServer() {
+  if (!canSync()) return;
+  try {
+    const data = await callSyncApi('/api/pull');
+    if (!data) return;
+
+    const merge = (kind, incoming) => {
+      const have = new Set(state[kind].map((x) => x.id));
+      const gone = new Set(state.retired[kind]);
+      const fresh = (incoming || []).filter((x) => x && x.id && !have.has(x.id) && !gone.has(x.id));
+      state[kind] = state[kind].concat(fresh);
+      return fresh;
+    };
+    const hadCases = state.cases.some((c) => c.parsedTime);
+    const addedCases = merge('cases', data.cases);
+    const addedVerdicts = merge('verdicts', data.verdicts);
+    if (addedCases.length + addedVerdicts.length === 0) return;
+
+    // 0004 之前存的命例服务端没有 cityKnown，按占位地名推断——占位名只在这里定义
+    for (const c of addedCases) {
+      if (c.cityKnown === null) c.cityKnown = Boolean(c.cityName) && c.cityName !== UNKNOWN_CITY;
+    }
+
+    persistCases();     // 内部 scheduleSync：合并结果会推回去
+    persistVerdicts();
+    // 新设备上本机原本一条盘都没有，这时首屏还停在样盘——切到老师上次看的那条
+    if (!hadCases && addedCases.length > 0) {
+      restoreLastCase();
+      runCompute();
+      switchTab('chart');
+    } else {
+      renderCaseNav();
+      renderVerdictForm();
+    }
+    if (document.getElementById('tab-verdicts')?.classList.contains('active')) renderVerdictsList();
+    showToast(`已从服务器取回 ${addedCases.length} 条命例、${addedVerdicts.length} 条裁定`);
+  } catch (err) {
+    // 拉不到不影响排盘，本机的照常用；推送那边会显示「待同步」
+    console.error('拉取服务端记录失败:', err);
   }
 }
 
@@ -1468,6 +1536,36 @@ function verdictChartLabel(v, caseById) {
   return `${who} · ${y}-${mo}-${d} ${h}:${mi} · ${v.cityName || place}`;
 }
 
+/** 裁定表单里「神煞表源异议」的四个复选框。选项来自引擎的 PENDING 表，只在启动时填一次。 */
+/** 表源文字里的 **…** 圈的是各家打架的那一句：HTML 场合渲染成粗体，纯文字场合去掉标记 */
+const sourceHtml = (source) => escapeHtml(source || '古籍通行口诀').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+const sourcePlain = (source) => String(source || '').replace(/\*\*/g, '');
+
+function fillShenShaOptions() {
+  const el = document.getElementById('verdict-shensha-options');
+  if (!el || el.children.length) return;
+  el.innerHTML = PENDING_SHENSHA.map(({ name, source }) => `
+    <label title="${escapeHtml(sourcePlain(source))}">
+      <input type="checkbox" name="verdict-shensha" value="${escapeHtml(name)}"> ${escapeHtml(name)}
+    </label>`).join('');
+}
+
+/**
+ * 从口诀浮层过来的「对这条表源有异议」：关浮层、展开异议段、预勾这一条、滚到裁定卡。
+ * 老师在盘上看到星号 → 点开口诀 → 一步到能写的地方，中间不用自己找。
+ */
+export function disputeShenSha(name) {
+  closeShenShaPop();
+  const box = document.getElementById('verdict-shensha-details');
+  if (box) box.open = true;
+  const chk = document.querySelector(`input[name="verdict-shensha"][value="${name}"]`);
+  if (chk) chk.checked = true;
+  requestAnimationFrame(() => {
+    box?.scrollIntoView({ block: 'center' });
+    document.getElementById('verdict-shensha-note')?.focus();
+  });
+}
+
 /** 给四柱的天干/地支下拉填选项。选项是固定的，只在启动时填一次。 */
 function fillGanZhiSelects() {
   for (const k of PILLAR_KEYS) {
@@ -1686,8 +1784,7 @@ export function pickCompareSide(kind, side) {
   const cmp = state.compare.find((c) => c.dim.kind === kind);
   if (!cmp) return;
   comparePendingSide = { kind, side };
-  Object.assign(state.input, side === 'left' ? cmp.dim.left.patch : cmp.dim.right.patch);
-  runCompute();   // 内部会重跑 renderCompare，把按钮的选中态一并刷新
+  setSwitches(side === 'left' ? cmp.dim.left.patch : cmp.dim.right.patch);   // 内部重排会重跑 renderCompare
 }
 
 /** 确认提交对照页的一键裁定 */
@@ -1793,6 +1890,10 @@ export function renderVerdictsList() {
           <div class="verdict-prop"><strong>时间来源</strong>：<span class="source-tag">${escapeHtml(v.timeSource)}</span></div>
           <div class="verdict-prop"><strong>依据流派</strong>：${escapeHtml(v.school || '未填')}</div>
           ${v.reason ? `<div class="verdict-prop"><strong>裁定理由</strong>：${escapeHtml(v.reason)}</div>` : ''}
+          ${v.shenshaDisputed?.length || v.shenshaNote
+            ? `<div class="verdict-prop"><strong>神煞表源异议</strong>：${escapeHtml((v.shenshaDisputed || []).join('、') || '（未指明条目）')}${
+                v.shenshaNote ? ` · ${escapeHtml(v.shenshaNote)}` : ''}</div>`
+            : ''}
         </div>
       </div>
     `;
@@ -1913,11 +2014,10 @@ export function selectDualChart(index) {
 }
 
 /** 展示 Toast 浮层提示 */
-export function showToast(msg, duration = 2800, { html = false } = {}) {
+export function showToast(msg, duration = 2800) {
   const toast = document.getElementById('toast');
   if (!toast) return;
-  if (html) toast.innerHTML = msg;
-  else toast.innerText = msg;
+  toast.innerText = msg;
   toast.style.display = 'block';
   clearTimeout(window.__toastTimer);
   window.__toastTimer = setTimeout(() => {
@@ -1933,14 +2033,19 @@ export function showShenShaSource(pillarKey, shenShaIndex) {
   if (!p || !p.shenSha || !p.shenSha[shenShaIndex]) return;
 
   const ss = p.shenSha[shenShaIndex];
-  // 表源里 **…** 圈出的是各家打架的那一句，正是要老师看的重点——渲染成粗体，不能原样露出星号
-  const source = escapeHtml(ss.source || '古籍通行口诀')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  let msg = `【${escapeHtml(ss.name)}】<br>口诀出处：${source}`;
-  if (ss.pendingTeacherConfirm) {
-    msg += `<br>⚠️ 提示：该神煞表源待老师确认`;
-  }
-  showToast(msg, 4500, { html: true });
+  // 这段要老师细读，不能用几秒就消失的 toast，开一个他自己关的浮层
+  setHtml('shensha-pop-body', `
+    <div class="shensha-pop-title">${escapeHtml(ss.name)}${ss.pendingTeacherConfirm ? ' <span class="shensha-pop-pending">表源待老师确认</span>' : ''}</div>
+    <div class="shensha-pop-source">${sourceHtml(ss.source)}</div>
+    ${ss.pendingTeacherConfirm ? `
+      <button type="button" class="shensha-pop-dispute" onclick="window.app.disputeShenSha('${escapeHtml(ss.name)}')">
+        对这条表源有异议 → 去裁定里写</button>` : ''}
+  `);
+  document.getElementById('shensha-pop')?.classList.add('open');
+}
+
+export function closeShenShaPop() {
+  document.getElementById('shensha-pop')?.classList.remove('open');
 }
 
 /** 从 12 位快速输入直接排盘 */
@@ -2362,6 +2467,11 @@ export function submitVerdict() {
   const reasonInput = document.getElementById('verdict-reason-input');
   const reason = reasonInput ? reasonInput.value.trim() : '';
 
+  // 4. 神煞表源异议（可选，附带在这条裁定上；四柱判定仍然必填）
+  const shenshaDisputed = [...document.querySelectorAll('input[name="verdict-shensha"]:checked')]
+    .map((el) => el.value);
+  const shenshaNote = document.getElementById('verdict-shensha-note')?.value.trim() ?? '';
+
   recordVerdict({
     disputedPillars,
     teacherGanZhi,
@@ -2372,6 +2482,8 @@ export function submitVerdict() {
     school,
     timeSource,
     reason,
+    shenshaDisputed,
+    shenshaNote,
   });
 
   // 清空表单
@@ -2418,6 +2530,12 @@ function resetVerdictForm() {
 
   const reasonInput = document.getElementById('verdict-reason-input');
   if (reasonInput) reasonInput.value = '';
+
+  for (const chk of document.querySelectorAll('input[name="verdict-shensha"]')) chk.checked = false;
+  const ssNote = document.getElementById('verdict-shensha-note');
+  if (ssNote) ssNote.value = '';
+  const ssBox = document.getElementById('verdict-shensha-details');
+  if (ssBox) ssBox.open = false;
 
   // 时间来源与依据流派刻意不预选、提交后也复位：
   // 预选等于替老师答了，落库后分不清「他选了出生证」和「他没管这一栏」
@@ -2510,23 +2628,36 @@ function escapeHtml(str) {
 // 6. 口径开关实时同步
 // ============================================================================
 
+/** 改开关的唯一入口：写进 state、记住偏好、重排。工具栏与对照页的一键选边都走这里。 */
+function setSwitches(patch) {
+  Object.assign(state.input, patch);
+  persist(SWITCHES_KEY, JSON.stringify(currentSwitches()), '保存开关偏好失败，下次打开会回到全关');
+  runCompute();   // renderToolbarAndAudit 会把工具栏控件刷成 state 的值
+}
+
+/** 启动时取回上次的开关。没存过或存坏了就保持默认全关。 */
+function loadSwitches() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SWITCHES_KEY) || 'null');
+    if (!saved || typeof saved !== 'object') return;
+    state.input.applyTrueSolar = Boolean(saved.applyTrueSolar);
+    state.input.applyDst = Boolean(saved.applyDst);
+    state.input.sect = Number(saved.sect) === 2 ? 2 : 1;
+  } catch (e) {
+    console.error('读取开关偏好失败，按默认全关:', e);
+  }
+}
+
 export function syncSolar(checked) {
-  state.input.applyTrueSolar = Boolean(checked);
-  const tb = document.getElementById('toolbar-solar');
-  if (tb) tb.checked = checked;
-  runCompute();
+  setSwitches({ applyTrueSolar: Boolean(checked) });
 }
 
 export function syncDst(checked) {
-  state.input.applyDst = Boolean(checked);
-  const tb = document.getElementById('toolbar-dst');
-  if (tb) tb.checked = checked;
-  runCompute();
+  setSwitches({ applyDst: Boolean(checked) });
 }
 
 export function syncSect(sectValue) {
-  state.input.sect = Number(sectValue);
-  runCompute();
+  setSwitches({ sect: Number(sectValue) });
 }
 
 // ============================================================================
@@ -2545,6 +2676,8 @@ if (typeof window !== 'undefined') {
       toggleAudit,
       selectDualChart,
       showShenShaSource,
+      closeShenShaPop,
+      disputeShenSha,
       apply12DigitInput,
       onCitySearchInput,
       selectCity,
@@ -2580,6 +2713,7 @@ if (typeof window !== 'undefined') {
 
     initTeacherToken();
     loadPersistedData();
+    loadSwitches();
     // 把上次留存的批量命例先渲染出来，否则追加解析时列表看着是空的
     renderBatchList();
     renderSyncStatus();
@@ -2590,7 +2724,10 @@ if (typeof window !== 'undefined') {
     window.addEventListener('online', runSync);   // 网络恢复即重试
     // 有缓存的称呼就不必再问一次 /api/me；邀请码有没有效，紧接着的 runSync 会顺带判定
     if (state.teacher.token && !state.teacher.name) fetchTeacherName();
-    runSync();                                    // 补传上次没送出去的
+    // 先拉后推：把别的设备上的记录接回来，再把本机的（含上次没送出去的）送上去。
+    // 不 await：首屏按本机数据先出来，拉取在后台补。走 scheduleSync 而不是 runSync：
+    // 拉到东西时 persist 已经排了一次推送，这里再排只是重置同一个定时器，不会推两遍。
+    pullFromServer().finally(scheduleSync);
 
     // 监听 12 位快速输入的实时输入，满 12 位时自动预览格式
     const q12 = document.getElementById('quick-12-input');
@@ -2624,6 +2761,7 @@ if (typeof window !== 'undefined') {
     }
 
     fillGanZhiSelects();
+    fillShenShaOptions();
     restoreLastCase();
     runCompute();
 

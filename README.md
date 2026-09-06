@@ -88,7 +88,7 @@ const db=new DatabaseSync('/srv/hongniang-bazi/data/hongniang-bazi.sqlite');
 console.table(db.prepare(\`
   SELECT t.name AS teacher, t.source, c.name, c.birth_at, c.city_name,
          v.disputed_pillars, v.teacher_gan_zhi, v.our_gan_zhi, v.options,
-         v.time_source, v.school, v.reason
+         v.time_source, v.school, v.reason, v.shensha_disputed, v.shensha_note
   FROM verdicts v
   JOIN cases c    ON c.teacher_id = v.teacher_id AND c.id = v.chart_id
   JOIN teachers t ON t.id = v.teacher_id
@@ -101,6 +101,8 @@ console.table(db.prepare(\`
 >
 > 0002 迁移之前收上来的裁定，`our_gan_zhi` / `options` / `city_name` 为 NULL，
 > 且 `chart_id` 是旧格式、join 不到命例——分析时按「口径未知」剔除。
+> `shensha_disputed`（JSON 数组）/ `shensha_note` 是 0004 加的神煞表源异议，老师对
+> 德秀贵人 / 福星贵人 / 学堂 / 羊刃 该用哪一派的意见就在这两列。
 
 **备份**：整个 `data/` 目录就是全部数据，`sqlite3 ... .backup` 或直接 cp
 （WAL 模式下建议用前者）。
