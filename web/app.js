@@ -3,6 +3,7 @@
 // 中文注释，英文变量名/函数名 (Strict adherence to task guidelines)
 
 import { computeChart } from '../engine/src/chart.js';
+import { fmt } from '../engine/src/solartime.js';
 import {
   PILLAR_KEYS,
   DETAIL_ROWS,
@@ -77,6 +78,9 @@ const state = {
   // 引擎计算输出结果
   currentResult: null,
   activeChartIndex: 0,
+  // 三条口径各翻一次开关的比对结果（见 compareAllDimensions），风险条与对照页共用。
+  // 只在 renderAll 开头刷新，读它的函数都在 renderAll 之后才跑。
+  compare: [],
   // 本机命例列表。单个录入与批量粘贴写的是同一个列表——
   // 早先只有批量会进这里，于是单个录入的盘永远同步不上去，裁定成了无源之水。
   cases: [],
@@ -353,6 +357,8 @@ function persistVerdicts() {
   try {
     localStorage.setItem('bazi_verdicts', JSON.stringify(state.verdicts));
     updateVerdictBadge();
+    renderBatchList();     // 「✓ 已裁定」徽章
+    renderCaseNav();       // 「下一条未裁定」是否还有得跳
   } catch (e) {
     console.error('保存裁定至 localStorage 失败:', e);
   }
@@ -786,6 +792,15 @@ function normalizeRawLine(raw) {
   return String(raw ?? '').trim().replace(/\s+/g, ' ');
 }
 
+// 批量行里的关键词 → 它落到哪个字段、什么值。整词匹配，一个词只查一次。
+const BATCH_KEYWORDS = new Map([
+  ...['女', '坤造', '坤', '女命'].map((w) => [w, { field: 'gender', value: 'female' }]),
+  ...['男', '乾造', '乾', '男命'].map((w) => [w, { field: 'gender', value: 'male' }]),
+  ...['出生证', '证'].map((w) => [w, { field: 'timeSource', value: TIME_SOURCE.CERT }]),
+  ...['家人口述', '口述', '家人'].map((w) => [w, { field: 'timeSource', value: TIME_SOURCE.FAMILY }]),
+  ...['客户自报', '自报', '本人'].map((w) => [w, { field: 'timeSource', value: TIME_SOURCE.SELF }]),
+]);
+
 /**
  * 解析批量文本输入（一行一个命例）
  * 支持多种灵活格式：
@@ -809,21 +824,15 @@ export function parseBatchCases(text) {
     let dateTimeParsed = null;
     let timeSource = TIME_SOURCE.SELF;
 
-    // 性别关键词识别
-    if (line.includes('女') || line.includes('坤造') || line.includes('坤')) {
-      gender = 'female';
-    } else if (line.includes('男') || line.includes('乾造') || line.includes('乾')) {
-      gender = 'male';
+    // 性别与时间来源只认整个词，不做子串匹配：
+    // 原来 line.includes('坤') 排在「男」前面，「张坤 … 男」会被判成坤造。
+    const tokens = line.split(/\s+/).filter(Boolean);
+    const fields = { gender, timeSource };
+    for (const token of tokens) {
+      const hit = BATCH_KEYWORDS.get(token);
+      if (hit) fields[hit.field] = hit.value;
     }
-
-    // 时间来源识别
-    if (line.includes('出生证') || line.includes('证')) {
-      timeSource = TIME_SOURCE.CERT;
-    } else if (line.includes('口述') || line.includes('家人')) {
-      timeSource = TIME_SOURCE.FAMILY;
-    } else if (line.includes('自报') || line.includes('本人')) {
-      timeSource = TIME_SOURCE.SELF;
-    }
+    ({ gender, timeSource } = fields);
 
     // 匹配 12 位纯数字
     const match12 = line.match(/\b\d{12}\b/);
@@ -848,10 +857,9 @@ export function parseBatchCases(text) {
     }
 
     // 提取名字与城市
-    const tokens = line.split(/\s+/).filter(Boolean);
     for (const token of tokens) {
       if (/^\d{12}$/.test(token) || /^\d{4}[-/.]/.test(token)) continue;
-      if (['男', '女', '乾造', '坤造', '乾', '坤', '出生证', '家人口述', '客户自报'].includes(token)) continue;
+      if (BATCH_KEYWORDS.has(token)) continue;
       // 地名解析。原来直接取第一条：「朝阳」会静默落成辽宁朝阳市，
       // 与北京朝阳区差 14 分钟时差，足够翻掉一个时辰，而且不吭声。
       // 现在跨省重名会带着候选交给老师确认，绝不替他选。
@@ -942,6 +950,7 @@ function setHtml(id, html) {
 
 /** 综合渲染主入口 */
 function renderAll() {
+  state.compare = compareAllDimensions();
   renderProfile();
   renderRisks();
   renderCityConfirmBar();
@@ -949,6 +958,7 @@ function renderAll() {
   renderToolbarAndAudit();
   renderChartTable();
   renderVerdictForm();
+  renderCaseNav();
   // 对照页要多算两张盘。它藏着的时候不算——切过去时 switchTab 会补上。
   if (document.getElementById('tab-compare')?.classList.contains('active')) renderCompare();
   updateVerdictBadge();
@@ -1001,7 +1011,7 @@ function renderRisks() {
     return;
   }
 
-  const risks = chart.risks || [];
+  const risks = verifyRisks(chart);
 
   if (risks.length === 0) {
     // 契约与任务书硬要求：无风险时也要有一行「本盘不在已知分歧区」，不要留空——那同样是信息
@@ -1022,7 +1032,9 @@ function renderRisks() {
   let html = `<div class="risk-title">⚠️ 排盘风险提醒（老师重点复核）：</div><ul class="risk-list">`;
   for (const r of risks) {
     const levelClass = r.level === RISK_LEVEL.WARN ? 'level-warn' : 'level-info';
-    const affectsText = r.affects?.map((k) => PILLAR_NAMES[k] || k).join('、') || '全部';
+    const affectsText = r.verifiedSame
+      ? '本盘四柱未变'
+      : `影响${r.affects?.map((k) => PILLAR_NAMES[k] || k).join('、') || '全部'}`;
     // 出生地缺失说的是「输入不全」，不是「各家排法有争议」，徽章不能混用
     const badge = r.kind === RISK_KIND.CITY_UNKNOWN
       ? '出生地缺失'
@@ -1030,7 +1042,7 @@ function renderRisks() {
     html += `
       <li class="risk-item ${levelClass}">
         <span class="risk-badge">${badge}</span>
-        <span class="risk-affects">[影响${affectsText}]</span>
+        <span class="risk-affects">[${affectsText}]</span>
         <span class="risk-message">${escapeHtml(r.message)}</span>
       </li>
     `;
@@ -1173,10 +1185,7 @@ function renderToolbarAndAudit() {
   // 时柱变动横幅提示
   const solarBanner = document.getElementById('solar-banner');
   if (solarBanner) {
-    // 对比标准北京时柱与真太阳时柱
-    const beijingTimeGz = chart.times?.beijing ? `${chart.pillars.time.ganZhi}` : '';
-    // 计算未开启真太阳时的时柱以判断是否变动
-    const isChanged = state.input.applyTrueSolar && chart.risks.some((r) => r.kind === RISK_KIND.TRUE_SOLAR);
+    const isChanged = state.input.applyTrueSolar && switchFlipsHour(RISK_KIND.TRUE_SOLAR);
     solarBanner.style.display = isChanged ? 'block' : 'none';
     solarBanner.innerText = isChanged ? '时柱因开启真太阳时发生跨时辰翻转' : '';
   }
@@ -1195,7 +1204,7 @@ function renderChartTable() {
   if (!chart) return;
 
   const pillars = chart.pillars;
-  const isSolarChanged = state.input.applyTrueSolar && chart.risks.some((r) => r.kind === RISK_KIND.TRUE_SOLAR);
+  const isSolarChanged = state.input.applyTrueSolar && switchFlipsHour(RISK_KIND.TRUE_SOLAR);
 
   let html = '';
 
@@ -1274,7 +1283,7 @@ function renderChartTable() {
             html += `
               <span class="${hasConfirm ? 'note' : ''}"
                 onclick="window.app.showShenShaSource('${escapeHtml(pKey)}', ${sIdx})">
-                ${escapeHtml(ss.name)}${hasConfirm ? '*' : ''}
+                ${escapeHtml(ss.name)}
               </span>
             `;
           }
@@ -1316,6 +1325,99 @@ function renderVerdictForm() {
   if (curSummaryEl) {
     curSummaryEl.innerText = `${state.input.name} · ${chart.ganZhi} · ${state.input.cityName} · ${chartOptionsLabel(currentChartOptions())}`;
   }
+
+  // 这个盘已经裁定过就说一声，免得老师重复提交、也免得他以为自己漏了
+  const mine = state.verdicts.filter((v) => v.chartId === activeCaseId());
+  const latest = mine[mine.length - 1];
+  // 提交完老师的视线就在这张卡上，「下一条未裁定」放这里比放盘顶的翻页条更顺手
+  const next = nextUnjudgedIndex();
+  setHtml('verdict-judged-line', mine.length
+    ? `✓ 此盘已有 <strong>${mine.length}</strong> 条裁定 · 最近：${latest.disputedPillars.length ? '存在分歧' : '与我们一致'}
+       <a href="javascript:void 0" onclick="window.app.switchTab('verdicts')">查看</a>${
+         next >= 0 ? `<a href="javascript:void 0" onclick="window.app.nextUnjudgedCase()">下一条未裁定 →</a>` : ''}`
+    : '');
+}
+
+/** 当前盘对应的命例 id。没落到列表里时按当前输入现算，与 recordVerdict 落库时同源。 */
+function activeCaseId() {
+  return state.cases[state.activeCaseIndex]?.id ?? caseIdOf(state.input);
+}
+
+/** 每条命例已有几条裁定 */
+function verdictCountByCase() {
+  const counts = new Map();
+  for (const v of state.verdicts) counts.set(v.chartId, (counts.get(v.chartId) ?? 0) + 1);
+  return counts;
+}
+
+/**
+ * 批量核盘的翻页条：上一条 / 第几条 / 下一条 / 下一条未裁定。
+ * 原来每核完一个都要切回「快速录入」找下一条，30 个盘就是 30 次来回。
+ */
+/** 能排盘的命例下标（时间解析失败的行跳过），翻页与「下一条未裁定」都按它走 */
+function validCaseIndices() {
+  return state.cases.map((c, i) => (c.parsedTime ? i : -1)).filter((i) => i >= 0);
+}
+
+/** 从当前命例往后找（到头回到开头）第一条没留过裁定的 */
+function nextUnjudgedIndex() {
+  const counts = verdictCountByCase();
+  const valid = validCaseIndices();
+  const pos = valid.indexOf(state.activeCaseIndex);
+  for (let step = 1; step <= valid.length; step++) {
+    const i = valid[(pos + step) % valid.length];
+    if (i !== state.activeCaseIndex && !counts.has(state.cases[i].id)) return i;
+  }
+  return -1;
+}
+
+function renderCaseNav() {
+  const el = document.getElementById('case-nav');
+  if (!el) return;
+
+  const valid = validCaseIndices();
+  const pos = valid.indexOf(state.activeCaseIndex);
+  if (valid.length < 2 || pos < 0) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
+  const hasUnjudged = nextUnjudgedIndex() >= 0;
+  const nameOf = (i) => (i === undefined ? '' : escapeHtml(state.cases[i].name));
+
+  el.style.display = 'flex';
+  el.innerHTML = `
+    <button type="button" class="case-nav-btn" ${pos === 0 ? 'disabled' : ''}
+      onclick="window.app.stepCase(-1)" title="${nameOf(valid[pos - 1])}">‹ 上一条</button>
+    <span class="case-nav-pos">${pos + 1} / ${valid.length}</span>
+    <button type="button" class="case-nav-btn" ${pos === valid.length - 1 ? 'disabled' : ''}
+      onclick="window.app.stepCase(1)" title="${nameOf(valid[pos + 1])}">下一条 ›</button>
+    <button type="button" class="case-nav-btn case-nav-unjudged" ${hasUnjudged ? '' : 'disabled'}
+      onclick="window.app.nextUnjudgedCase()">下一条未裁定 →</button>
+  `;
+}
+
+/** 翻到相邻的一条可排的命例 */
+export function stepCase(dir) {
+  const valid = validCaseIndices();
+  const pos = valid.indexOf(state.activeCaseIndex);
+  const target = valid[pos + dir];
+  if (target === undefined) return;
+  loadCaseToChart(state.cases[target], target);
+  switchTab('chart');
+}
+
+/** 跳到下一条还没留过裁定的命例：先往后找，找到头再从开头找 */
+export function nextUnjudgedCase() {
+  const i = nextUnjudgedIndex();
+  if (i < 0) {
+    showToast('列表里的命例都已留过裁定');
+    return;
+  }
+  loadCaseToChart(state.cases[i], i);
+  switchTab('chart');
+  window.scrollTo(0, 0);
 }
 
 /** 当前三个开关 */
@@ -1383,12 +1485,11 @@ function fillGanZhiSelects() {
 }
 
 /**
- * 对照页要对照的那条口径。
+ * 三条可开关的口径。对照页固定把三条都算一遍，不再靠 chart.risks 决定比什么——
+ * 原来只取命中的第一条，一个盘同时有夏令时和真太阳时分歧时，后者被吞掉，
+ * 页面写「两种排法结果相同」而风险条在喊「重点分歧」。
  *
- * 原来固定是「三开关全关 vs 当前」。可默认三个开关就是全关的，两边必然一模一样，
- * 页面写「两侧完全一致」，而上方风险条同时在喊「重点分歧，开与关所得时柱不同」——
- * 老师看到的是自相矛盾。真正该并排的是**争议本身的两边**：这个盘因为哪条口径有分歧，
- * 就把那条的开与关摆出来。
+ * `kind` 与引擎的风险种类一一对应，verifyRisks 靠它把风险和真实差异对上。
  */
 const COMPARE_DIMENSIONS = [
   {
@@ -1396,6 +1497,8 @@ const COMPARE_DIMENSIONS = [
     cause: '真太阳时校正',
     left: { name: '不做真太阳时校正', patch: { applyTrueSolar: false } },
     right: { name: '做真太阳时校正', patch: { applyTrueSolar: true } },
+    // 右列下面附一行：校正后到底是几点，老师一眼看出为什么翻时辰
+    rightNote: (side) => `校正后 ${fmtClock(side.chart.times?.trueSolar)}`,
   },
   {
     kind: RISK_KIND.ZI_SHI,
@@ -1408,29 +1511,23 @@ const COMPARE_DIMENSIONS = [
     cause: '夏令时回拨',
     left: { name: '不回拨夏令时', patch: { applyDst: false } },
     right: { name: '回拨夏令时（−1 小时）', patch: { applyDst: true } },
+    rightNote: (side) => `回拨后 ${fmtClock(side.chart.times?.beijing)}`,
   },
 ];
 
-// 这个盘不在任何已知分歧区时的兜底：仍然让老师看清三个开关合起来改了什么
-const COMPARE_FALLBACK = {
-  kind: null,
-  cause: '当前开关',
-  left: { name: '未校正（按钟表时直接排）', patch: { applyTrueSolar: false, applyDst: false, sect: 1 } },
-  right: { name: '当前口径', patch: {} },
-};
-
-/** 老师在对照页点了哪一边（尚未确认提交） */
+/** 老师在对照页点了哪一边（尚未确认提交）：{ kind, side } */
 let comparePendingSide = null;
 
-/** 按盘上的风险挑一条来对照，挑不出就走兜底 */
-function pickCompareDimension(chart) {
-  const kinds = new Set((chart.risks || []).map((r) => r.kind));
-  return COMPARE_DIMENSIONS.find((d) => kinds.has(d.kind)) ?? COMPARE_FALLBACK;
-}
+/** `{year,month,day,hour,minute}` → `08-10 10:53`。去掉年份，跨日时日期才有意义所以留着。 */
+const fmtClock = (t) => (t ? fmt(t).slice(5) : '—');
 
-/** 在当前输入基础上套一组开关，算出那一侧的盘与口径快照 */
+/** 在当前输入基础上套一组开关，算出那一侧的盘与口径快照。套完等于当前开关的那一侧直接复用主盘。 */
 function computeSide(patch) {
   const options = { ...currentSwitches(), ...patch };
+  const current = getActiveChart();
+  if (current && Object.entries(patch).every(([k, v]) => options[k] === v && currentSwitches()[k] === v)) {
+    return { chart: current, options: { ...options, timeFold: current.input.timeFold }, isCurrent: true };
+  }
   const result = computeChart({
     year: state.input.year,
     month: state.input.month,
@@ -1445,7 +1542,57 @@ function computeSide(patch) {
   });
   // 夏令时重复小时会出双盘，跟着老师当前看的那一盘走
   const chart = result.charts[state.activeChartIndex] ?? result.charts[0];
-  return { chart, options: { ...options, timeFold: chart.input.timeFold } };
+  return { chart, options: { ...options, timeFold: chart.input.timeFold }, isCurrent: false };
+}
+
+/**
+ * 三条口径各排两张盘，逐柱比对。风险条与对照页都只认这一份结果，两处不会再打架。
+ * 每次 renderAll 算一次（6 张盘，毫秒级），存在 state.compare。
+ */
+function compareAllDimensions() {
+  return COMPARE_DIMENSIONS.map((dim) => {
+    const left = computeSide(dim.left.patch);
+    const right = computeSide(dim.right.patch);
+    const diffKeys = PILLAR_KEYS.filter(
+      (k) => left.chart.pillars[k].ganZhi !== right.chart.pillars[k].ganZhi,
+    );
+    return { dim, left, right, diffKeys };
+  });
+}
+
+/**
+ * 用真实排盘结果校验引擎给的风险。
+ *
+ * 引擎只看「偏移量有没有跨过时辰边界」就断言「开关两边时柱不同」，实测夏令时重复时那张盘
+ * 在子初换日下开关两边都是戊子——风险条红字警告，对照页却说完全一致。这里把可开关的
+ * 三种风险真的翻一下开关比一比：有差异的，把差异柱与干支写进消息；没差异的降为「需留心」。
+ * 夏令时重复/跳过、交节、出生地缺失不是开关能验证的，原样保留。
+ */
+function verifyRisks(chart) {
+  const byKind = new Map(state.compare.map((c) => [c.dim.kind, c]));
+  return (chart.risks || []).map((r) => {
+    const cmp = byKind.get(r.kind);
+    if (!cmp) return r;
+    if (cmp.diffKeys.length === 0) {
+      return {
+        ...r,
+        level: RISK_LEVEL.INFO,
+        affects: [],
+        verifiedSame: true,
+        message: `${cmp.dim.cause}：按当前其余开关，切换前后四柱相同；换另一种开关组合时仍可能不同。`,
+      };
+    }
+    const detail = cmp.diffKeys
+      .map((k) => `${PILLAR_NAMES[k]} ${cmp.left.chart.pillars[k].ganZhi} ↔ ${cmp.right.chart.pillars[k].ganZhi}`)
+      .join('，');
+    return { ...r, level: RISK_LEVEL.WARN, affects: cmp.diffKeys, message: `${r.message}本盘：${detail}。` };
+  });
+}
+
+/** 当前开关下，这条口径翻过去会不会改动时柱——细盘表头与横幅据此标「时柱翻转」 */
+function switchFlipsHour(kind) {
+  const cmp = state.compare.find((c) => c.dim.kind === kind);
+  return Boolean(cmp && cmp.diffKeys.includes('time'));
 }
 
 /** 渲染对照页（优先级 5） */
@@ -1453,103 +1600,101 @@ function renderCompare() {
   const chart = getActiveChart();
   if (!chart) return;
 
-  const dim = pickCompareDimension(chart);
-  const left = computeSide(dim.left.patch);
-  const right = computeSide(dim.right.patch);
+  // 命主条：不然这页只有两列干支，老师不知道自己在对照谁
+  const inp = state.input;
+  setHtml('compare-profile', `
+    <strong>${escapeHtml(inp.name)}</strong>
+    <span class="seal">${inp.gender === 'female' ? '坤' : '乾'}</span>
+    · ${fmt(inp)}
+    · ${escapeHtml(inp.cityName)} (${inp.longitude}°E)
+  `);
 
-  const diffKeys = PILLAR_KEYS.filter(
-    (k) => left.chart.pillars[k].ganZhi !== right.chart.pillars[k].ganZhi,
-  );
+  const differing = state.compare.filter((c) => c.diffKeys.length > 0);
+  const same = state.compare.filter((c) => c.diffKeys.length === 0);
 
-  const column = (side, highlight) => PILLAR_KEYS.map((k) => {
+  setHtml('compare-sub', differing.length
+    ? `这个盘有 <strong>${differing.length}</strong> 条口径会改动四柱，每条的两种排法并排在下面，不同的柱标朱砂。
+       哪一套对由您判断，工具不替您裁定——但请在每条下面告诉我们您按哪一套。`
+    : '三条口径（真太阳时 / 子时流派 / 夏令时）开与关排出的四柱都相同，这个盘没有需要您裁定的口径。');
+
+  let html = differing.map((c, i) => renderCompareSection(c, i + 1)).join('');
+  if (same.length) {
+    html += `<div class="compare-same-list">${same.map((c) => `
+      <div class="compare-same">● <strong>${escapeHtml(c.dim.cause)}</strong>：
+        ${escapeHtml(c.dim.left.name)} / ${escapeHtml(c.dim.right.name)} 四柱相同</div>`).join('')}
+    </div>`;
+  }
+  if (differing.length) {
+    html += `<button type="button" class="compare-pick-none" onclick="window.app.goWriteVerdict()">
+      两边都不对，我自己写正确的四柱 →</button>`;
+  }
+  setHtml('compare-sections', html);
+}
+
+/** 一条有差异的口径：两列干支 + 一键裁定 */
+function renderCompareSection(cmp, ordinal) {
+  const { dim, left, right, diffKeys } = cmp;
+  const column = (side) => PILLAR_KEYS.map((k) => {
     const isDiff = diffKeys.includes(k);
     return `
       <div class="comp-pillar-item ${isDiff ? 'comp-diff' : ''}">
         <span class="comp-k">${PILLAR_NAMES[k]}</span>
-        <span class="comp-v ${isDiff && highlight ? 'highlight-cinnabar' : ''}">${escapeHtml(side.chart.pillars[k].ganZhi)}</span>
-      </div>
-    `;
+        <span class="comp-v ${isDiff ? 'highlight-cinnabar' : ''}">${escapeHtml(side.chart.pillars[k].ganZhi)}</span>
+      </div>`;
   }).join('');
+  const kicker = (side, name) => `<div class="compare-kicker">${escapeHtml(name)}${
+    side.isCurrent ? ' <span class="compare-current-tag">当前</span>' : ''}</div>`;
+  const note = dim.rightNote ? `<div class="compare-side-note">${escapeHtml(dim.rightNote(right))}</div>` : '';
 
-  setHtml('compare-base-kicker', escapeHtml(dim.left.name));
-  setHtml('compare-curr-kicker', escapeHtml(dim.right.name));
-  setHtml('compare-base-pillars', column(left, false));
-  setHtml('compare-curr-pillars', column(right, true));
+  const pending = comparePendingSide?.kind === dim.kind ? comparePendingSide.side : null;
+  const pickedSide = pending === 'left' ? left : right;
+  const pickedName = pending === 'left' ? dim.left.name : dim.right.name;
 
-  setHtml('compare-sub', diffKeys.length
-    ? `这个盘在<strong>${escapeHtml(dim.cause)}</strong>上存在争议，两种排法并排在下面，不同的柱标朱砂。
-       哪一套对由您判断，工具不替您裁定——但请告诉我们您按哪一套。`
-    : `这个盘按<strong>${escapeHtml(dim.cause)}</strong>的两种排法结果相同，没有需要您裁定的地方。`);
-
-  setHtml('compare-diff-explanation', diffKeys.length
-    ? `<div class="alert-cinnabar">● 两种排法有 <strong>${diffKeys.length}</strong> 处柱位不同（已朱砂高亮）：${
-        diffKeys.map((k) => PILLAR_NAMES[k]).join('、')}。</div>
-       <div class="note-desc"><strong>由什么引起</strong>：${escapeHtml(dim.cause)}。</div>`
-    : `<div class="alert-green">● 两种排法结果<strong>完全一致</strong>。</div>
-       <div class="note-desc">神煞条目差异属「表不同」，不是历法或口径错误。</div>`);
-
-  renderCompareActions(dim, left, right, diffKeys);
-}
-
-/**
- * 一键裁定。老师在这一页要回答的就是「你按哪一套排」——
- * 这是整个试用最值钱的一次点击，原来这页却连个提交入口都没有，
- * 文案还写着「请在下方直接写出正确的四柱」，而下方什么都没有。
- */
-function renderCompareActions(dim, left, right, diffKeys) {
-  const el = document.getElementById('compare-actions');
-  if (!el) return;
-
-  if (diffKeys.length === 0) {
-    el.innerHTML = '';
-    comparePendingSide = null;
-    return;
-  }
-
-  const picked = comparePendingSide;
-  const sideName = picked === 'left' ? dim.left.name : dim.right.name;
-
-  el.innerHTML = `
-    <div class="compare-pick-row">
-      <button type="button" class="compare-pick-btn ${picked === 'left' ? 'active' : ''}"
-        onclick="window.app.pickCompareSide('left')">我按左边这套排<br>${escapeHtml(dim.left.name)}</button>
-      <button type="button" class="compare-pick-btn ${picked === 'right' ? 'active' : ''}"
-        onclick="window.app.pickCompareSide('right')">我按右边这套排<br>${escapeHtml(dim.right.name)}</button>
-    </div>
-    <button type="button" class="compare-pick-none" onclick="window.app.goWriteVerdict()">
-      两边都不对，我自己写正确的四柱 →
-    </button>
-    ${picked ? `
-      <div class="compare-confirm">
-        您选的是「<strong>${escapeHtml(sideName)}</strong>」，四柱为
-        <strong>${escapeHtml((picked === 'left' ? left : right).chart.ganZhi)}</strong>。
-        还差一项——这个盘的出生时间是哪来的？
-        <div class="radio-group">
-          <label><input type="radio" name="compare-time-source" value="出生证"> 出生证</label>
-          <label><input type="radio" name="compare-time-source" value="家人口述"> 家人口述</label>
-          <label><input type="radio" name="compare-time-source" value="客户自报"> 客户自报</label>
+  return `
+    <section class="compare-section">
+      <div class="compare-cause">争议 ${ordinal} · ${escapeHtml(dim.cause)}
+        <span class="compare-cause-diff">${diffKeys.map((k) => PILLAR_NAMES[k]).join('、')}不同</span></div>
+      <div class="compare-container">
+        <div class="compare-col">${kicker(left, dim.left.name)}${column(left)}</div>
+        <div class="compare-col">${kicker(right, dim.right.name)}${column(right)}${note}</div>
+      </div>
+      <div class="compare-actions">
+        <div class="compare-pick-row">
+          <button type="button" class="compare-pick-btn ${pending === 'left' ? 'active' : ''}"
+            onclick="window.app.pickCompareSide('${dim.kind}', 'left')">我按左边这套排<br>${escapeHtml(dim.left.name)}</button>
+          <button type="button" class="compare-pick-btn ${pending === 'right' ? 'active' : ''}"
+            onclick="window.app.pickCompareSide('${dim.kind}', 'right')">我按右边这套排<br>${escapeHtml(dim.right.name)}</button>
         </div>
-        <button type="button" class="primary-btn" onclick="window.app.submitCompareVerdict()">确认并记录</button>
-      </div>` : ''}
-  `;
+        ${pending ? `
+          <div class="compare-confirm">
+            您选的是「<strong>${escapeHtml(pickedName)}</strong>」，四柱为
+            <strong>${escapeHtml(pickedSide.chart.ganZhi)}</strong>。
+            还差一项——这个盘的出生时间是哪来的？
+            <div class="radio-group">
+              <label><input type="radio" name="compare-time-source" value="出生证"> 出生证</label>
+              <label><input type="radio" name="compare-time-source" value="家人口述"> 家人口述</label>
+              <label><input type="radio" name="compare-time-source" value="客户自报"> 客户自报</label>
+            </div>
+            <button type="button" class="primary-btn" onclick="window.app.submitCompareVerdict()">确认并记录</button>
+          </div>` : ''}
+      </div>
+    </section>`;
 }
 
 /** 老师点了某一边：先把主盘切到这套口径，让他看到的就是他选的 */
-export function pickCompareSide(side) {
-  comparePendingSide = side;
-  const chart = getActiveChart();
-  if (!chart) return;
-
-  const dim = pickCompareDimension(chart);
-  Object.assign(state.input, side === 'left' ? dim.left.patch : dim.right.patch);
+export function pickCompareSide(kind, side) {
+  const cmp = state.compare.find((c) => c.dim.kind === kind);
+  if (!cmp) return;
+  comparePendingSide = { kind, side };
+  Object.assign(state.input, side === 'left' ? cmp.dim.left.patch : cmp.dim.right.patch);
   runCompute();   // 内部会重跑 renderCompare，把按钮的选中态一并刷新
 }
 
 /** 确认提交对照页的一键裁定 */
 export function submitCompareVerdict() {
-  if (!comparePendingSide) return;
   const chart = getActiveChart();
-  if (!chart) return;
+  const cmp = comparePendingSide && state.compare.find((c) => c.dim.kind === comparePendingSide.kind);
+  if (!chart || !cmp) return;
 
   const sourceEl = document.querySelector('input[name="compare-time-source"]:checked');
   if (!sourceEl) {
@@ -1559,6 +1704,7 @@ export function submitCompareVerdict() {
 
   // 主盘此刻已经切到老师选的那一套（见 pickCompareSide），
   // 所以「他认可当前这个盘」= 无分歧，口径快照记的就是他选的这套。
+  const sideName = comparePendingSide.side === 'left' ? cmp.dim.left.name : cmp.dim.right.name;
   recordVerdict({
     disputedPillars: [],
     teacherGanZhi: {},
@@ -1568,7 +1714,7 @@ export function submitCompareVerdict() {
     longitude: Number(state.input.longitude),
     school: '',
     timeSource: sourceEl.value,
-    reason: '在口径对照页选定',
+    reason: `在口径对照页选定：${cmp.dim.cause} · ${sideName}`,
   });
 
   comparePendingSide = null;
@@ -1665,10 +1811,12 @@ export function renderBatchList() {
     return;
   }
 
+  const counts = verdictCountByCase();
   let html = `<div class="batch-count-bar">本机命例 <strong>${state.cases.length}</strong> 条（单个录入与批量粘贴都在这里，点击任一条载入排盘）：</div>`;
 
   state.cases.forEach((c, idx) => {
     const isActive = idx === state.activeCaseIndex;
+    const judged = counts.get(c.id) ?? 0;
     const timeStr = c.parsedTime
       ? `${c.parsedTime.year}-${String(c.parsedTime.month).padStart(2,'0')}-${String(c.parsedTime.day).padStart(2,'0')} ${String(c.parsedTime.hour).padStart(2,'0')}:${String(c.parsedTime.minute).padStart(2,'0')}`
       : '时间解析失败';
@@ -1680,6 +1828,7 @@ export function renderBatchList() {
           <span class="batch-name">${escapeHtml(c.name)}</span>
           <span class="batch-gender">${c.gender === 'female' ? '坤造' : '乾造'}</span>
           <span class="batch-city">${escapeHtml(c.cityName)}</span>
+          ${judged ? `<span class="batch-badge batch-badge-judged">✓ 已裁定 ${judged}</span>` : ''}
           ${isActive ? '<span class="batch-badge">当前排盘</span>' : ''}
           <button type="button" class="batch-item-del" title="从列表中移除"
             onclick="event.stopPropagation(); window.app.removeBatchCase(${idx})">×</button>
@@ -1751,10 +1900,10 @@ export function switchInputMode(mode) {
 /** 切换朱批过程展开/收起 */
 export function toggleAudit() {
   const auditBox = document.getElementById('audit-box');
-  if (auditBox) {
-    const isHidden = auditBox.style.display === 'none' || !auditBox.style.display;
-    auditBox.style.display = isHidden ? 'block' : 'none';
-  }
+  if (!auditBox) return;
+  const open = !auditBox.classList.toggle('collapsed');
+  const btn = document.getElementById('audit-toggle-btn');
+  if (btn) btn.textContent = `朱批过程 ${open ? '▴' : '▾'}`;
 }
 
 /** 切换夏令时重复小时的双盘 */
@@ -1764,10 +1913,11 @@ export function selectDualChart(index) {
 }
 
 /** 展示 Toast 浮层提示 */
-export function showToast(msg, duration = 2800) {
+export function showToast(msg, duration = 2800, { html = false } = {}) {
   const toast = document.getElementById('toast');
   if (!toast) return;
-  toast.innerText = msg;
+  if (html) toast.innerHTML = msg;
+  else toast.innerText = msg;
   toast.style.display = 'block';
   clearTimeout(window.__toastTimer);
   window.__toastTimer = setTimeout(() => {
@@ -1783,11 +1933,14 @@ export function showShenShaSource(pillarKey, shenShaIndex) {
   if (!p || !p.shenSha || !p.shenSha[shenShaIndex]) return;
 
   const ss = p.shenSha[shenShaIndex];
-  let msg = `【${ss.name}】\n口诀出处：${ss.source || '古籍通行口诀'}`;
+  // 表源里 **…** 圈出的是各家打架的那一句，正是要老师看的重点——渲染成粗体，不能原样露出星号
+  const source = escapeHtml(ss.source || '古籍通行口诀')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  let msg = `【${escapeHtml(ss.name)}】<br>口诀出处：${source}`;
   if (ss.pendingTeacherConfirm) {
-    msg += `\n⚠️ 提示：该神煞表源待老师确认`;
+    msg += `<br>⚠️ 提示：该神煞表源待老师确认`;
   }
-  showToast(msg, 4500);
+  showToast(msg, 4500, { html: true });
 }
 
 /** 从 12 位快速输入直接排盘 */
@@ -2243,6 +2396,7 @@ function recordVerdict(fields) {
   };
   state.verdicts.push(verdict);
   persistVerdicts();
+  renderVerdictForm();   // 「此盘已有 N 条裁定」
   return verdict;
 }
 
@@ -2408,6 +2562,8 @@ if (typeof window !== 'undefined') {
       pickCompareSide,
       submitCompareVerdict,
       goWriteVerdict,
+      stepCase,
+      nextUnjudgedCase,
       exportVerdictsJson,
       deleteVerdict,
       clearAllVerdicts,
