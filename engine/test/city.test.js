@@ -20,7 +20,8 @@ test('层级排序 · 短查询先出省市级而不是深层区县', () => {
 });
 
 test('数据完整性 · 覆盖度与坐标合法范围', () => {
-  assert.ok(cities.length > 3000, `期望 3000+ 条，实得 ${cities.length}`);
+  // 民政部 2023 年表县级 2842 + 地级 333 + 省级 31；掉到 3100 以下说明名录源换错了
+  assert.ok(cities.length > 3100, `期望 3100+ 条，实得 ${cities.length}`);
   const bad = cities.filter(
     (c) => !c.name || !(c.lng >= 73 && c.lng <= 136) || !(c.lat >= 3 && c.lat <= 54),
   );
@@ -51,4 +52,22 @@ test('resolveCity · 跨省同名才算歧义，独苗与同省父子不算', ()
   const none = resolveCity('并不存在的地名');
   assert.equal(none.city, null);
   assert.equal(none.ambiguous, false, '查不到是「未知」，不是「歧义」，两者处理方式不同');
+});
+
+test('名录以民政部为准 · 新设区县查得到，撤县设区的旧名走别名', () => {
+  // 2026-09-07 老师反馈：南昌红谷滩区（2019 年设）搜不到——GeoNames 的 ADM 层没有它
+  assert.equal(resolveCity('红谷滩').city?.name, '江西省 南昌市 红谷滩区');
+  for (const q of ['姑苏区', '钱塘区', '浑南区', '潞州区']) {
+    assert.ok(lookupCity(q).length >= 1, `${q} 应在名录里`);
+  }
+  // 新建县 2015 年改新建区：旧名也要认，而且是「就是它」那一档
+  const r = resolveCity('新建县');
+  assert.equal(r.city?.name, '江西省 南昌市 新建区');
+  assert.equal(r.ambiguous, false);
+  // 省名必须是中文的民政部写法，不能再出现日文
+  assert.ok(cities.some((c) => c.name.startsWith('内蒙古自治区 ')));
+  assert.ok(!cities.some((c) => /[ぁ-ヿ]/.test(c.name)), '名录里不该有日文');
+  // 坐标兜底的条目极少，多了就是构建脚本的匹配坏了
+  const approx = cities.filter((c) => c.approx);
+  assert.ok(approx.length <= 5, `approx 条目过多：${approx.map((c) => c.name).join('、')}`);
 });

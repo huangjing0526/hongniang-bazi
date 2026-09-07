@@ -2137,16 +2137,18 @@ export function onCitySearchInput(query) {
   const matches = state.lookupCityFn(query).slice(0, 10);
   if (matches.length === 0) {
     listEl.style.display = 'block';
-    listEl.innerHTML = '<div class="city-opt-item empty">未找到匹配县市</div>';
+    // 名录再全也有漏。给老师一条不卡住的路，并让我们知道缺了哪个地名
+    listEl.innerHTML = `<div class="city-opt-item empty">没找到「${escapeHtml(query.trim())}」。
+      可先选到所在的市（经度差几分钟），并把这个区县名告诉我们补上。</div>`;
     return;
   }
 
   let html = '';
   matches.forEach((c) => {
     html += `
-      <div class="city-opt-item" onclick="window.app.selectCity('${escapeHtml(c.name)}', ${c.lng})">
+      <div class="city-opt-item" onclick="window.app.selectCity('${escapeHtml(c.name)}', ${c.lng}, ${Boolean(c.approx)})">
         <span class="city-name">${escapeHtml(c.name)}</span>
-        <span class="city-level">${cityLevelLabel(c.name)}</span>
+        <span class="city-level">${c.approx ? '坐标待补' : cityLevelLabel(c.name)}</span>
         <span class="city-lng">${c.lng}°E</span>
       </div>
     `;
@@ -2163,7 +2165,11 @@ export function onCitySearchInput(query) {
  * 但落在时辰边界附近的盘会被它翻过去，所以引导老师选到区县。
  * 见 engine/data/cities.SOURCE.md。
  */
-function cityPrecisionHint(name) {
+function cityPrecisionHint(name, approx = false) {
+  if (approx) {
+    return '这个区县的坐标暂缺，<b>先按所在地级市的坐标算</b>，与实际出生点可能差几分钟时差。'
+      + '知道准确经度可在下面「经度微调」里改。';
+  }
   const depth = String(name || '').trim().split(/\s+/).filter(Boolean).length;
   if (depth >= 3) return null;
   if (depth === 2) {
@@ -2173,10 +2179,10 @@ function cityPrecisionHint(name) {
   return '当前只选到省级，经度误差可能达到数十分钟时差，足以整柱改时柱。<b>请至少选到市，最好到区县。</b>';
 }
 
-function renderCityPrecisionHint(name) {
+function renderCityPrecisionHint(name, approx = false) {
   const el = document.getElementById('city-precision-hint');
   if (!el) return;
-  const msg = cityPrecisionHint(name);
+  const msg = cityPrecisionHint(name, approx);
   if (!msg) {
     el.style.display = 'none';
     el.innerHTML = '';
@@ -2186,12 +2192,12 @@ function renderCityPrecisionHint(name) {
   el.innerHTML = msg;
 }
 
-/** 选中城市 */
-export function selectCity(name, lng) {
+/** 选中城市。approx：这条的坐标是地级市兜底的（名录里标 approx 的极少数条目） */
+export function selectCity(name, lng, approx = false) {
   state.input.cityName = name;
   state.input.longitude = lng;
   state.input.cityKnown = true;
-  renderCityPrecisionHint(name);
+  renderCityPrecisionHint(name, approx);
 
   const cityInput = document.getElementById('city-search-input');
   if (cityInput) cityInput.value = name;

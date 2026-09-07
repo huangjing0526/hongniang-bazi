@@ -1,38 +1,48 @@
 # cities.json 数据来源
 
+由 `scripts/build-cities.mjs` 重建（`node scripts/build-cities.mjs`，加 `--offline` 只用缓存）。
+输入缓存在 `engine/data/.cache/`，不入库。
+
 | 项 | 值 |
 |---|---|
-| 来源 | [GeoNames](https://www.geonames.org/) 中国 dump — https://download.geonames.org/export/dump/CN.zip |
-| 许可证 | **CC BY 4.0** — 允许商用，**必须署名** |
-| 下载日期 | 2026-09-03（dump 文件日期 2026-09-02） |
-| 抽取范围 | ADM1 31 条 + ADM2 360 条 + ADM3 2938 条，去重后 **3301** 条 |
-| 字段 | `{ name, lng, lat }`，经纬度保留 4 位小数 |
-| 中文名 | 取自 dump 的 `alternatenames` 列，优先带行政后缀（省/市/区/县/自治区…）的条目 |
+| **名录** | 民政部《中华人民共和国行政区划代码》2023 年表 — https://www.mca.gov.cn/mzsj/xzqh/2023/202301xzqh.html |
+| 名录范围 | 省级 31 + 地级 333 + 县级 2842 = **3206 条**（港澳台暂不收：GeoNames 的 CN 包不含，老师也几乎不会遇到） |
+| **坐标·主源** | [GeoNames](https://www.geonames.org/) 中国 dump — https://download.geonames.org/export/dump/CN.zip（2026-09-02 版），**CC BY 4.0，必须署名** |
+| **坐标·补源** | [Wikidata](https://www.wikidata.org/)（CC0），只查 GeoNames 里完全没有的县级单位，51 条 |
+| 字段 | `{ name, lng, lat }`；撤县设区等改名的带 `aliases`（旧名，103 条）；实在找不到坐标的带 `approx: true`（1 条，按地级市） |
+| 展示名 | 「省 市 县」三段，直辖市写成「北京市 北京市 东城区」；省直辖县级写成「湖北省 仙桃市」 |
 
-## 署名义务（CC BY 4.0）
+## 为什么名录不再用 GeoNames 的 ADM 层
 
-产品界面与 `engine/README.md` 必须保留一句 GeoNames 署名并链回 geonames.org。删掉署名即违反许可证。
+2026-09-03 的首版直接抽 GeoNames 的 ADM1/2/3，只有 2938 个县级条目。和民政部 2023 年表一比：
+**545 个县级单位（19%）没有**——123 个是撤县设区没跟上（新建县→新建区），422 个整条缺失
+（红谷滩区、姑苏区、钱塘区、浑南区、潞州区……），抽出来的名字还混着日文省名「内モンゴル自治区」、
+拼错层级的「山西省 阳泉城区」「长治市 阳泉郊区」、英文的「儋州市 Yangpu Economic Development Zone」。
+老师录南昌红谷滩的客户时搜不到，这是 2026-09-07 老师试用反馈的第一条。
+
+地名录不是区划主数据。名录以民政部为准，GeoNames 只负责出坐标。
+
+## 坐标怎么取（依次回退）
+
+1. GeoNames **ADM3** 同名，同省，且离本地级市不远
+2. GeoNames 同名的乡镇 / 居民点（ADM4、PPLA*、PPL），同省，离本地级市不远
+3. **Wikidata** 同名条目（限中国境内），离本地级市不远
+4. 都没有 → 地级市坐标，标 `approx: true`，界面提示「坐标待补」
+
+「不远」东部 2.5°，西部与内蒙古/黑龙江 6°（呼伦贝尔、巴音郭楞这种横跨 8° 的辖区，用东部的尺子会把真条目扔掉），
+参照点是省级时 8°。全名命中优先于词干命中——「和田市」的词干「和田」会撞上和田地区，不分先后就被地区顶掉。
 
 ## 两个使用注意
 
-**一、地级市（ADM2）坐标是整个辖区的质心，不是市中心。**
-例：杭州市 ADM2 为 119.60，而上城区 ADM3 为 120.30，差 0.56° ≈ 2.2 分钟时差（杭州辖区西达淳安）。
+**一、地级市坐标多数是整个辖区的质心，不是市中心。**
+例：杭州市 119.60，而上城区 120.30，差 0.56° ≈ 2.2 分钟时差（杭州辖区西达淳安）。
+个别地级市 GeoNames 的中文别名只挂在驻地上（如酒泉市 98.81），那一条就是驻地坐标。
 远小于时辰跨度 120 分钟，但录入时应引导老师**选到区县**而非只选市。
 
-**二、GeoNames 是地名录，不是民政部行政区划主数据。**
-改名、撤县设区会滞后。**取经度够用，不要当区划主数据。**
+**二、名录按年更新，改名会滞后一年。** 换年份时改 `build-cities.mjs` 里的 `MCA_URL / MCA_YEAR` 重跑；
+旧名靠 `aliases` 兜着，老师批量粘贴旧名仍能认出来。
 
-## 为什么不用别的源
+## 为什么不用别的坐标源
 
-见主方案 §5.2。简言之：AreaCity、cn-pcas-geo 等仓库虽挂 MIT，但坐标抓自高德，
-高德条款禁止存储与生成数据库，**仓库作者无权转授**。GeoNames 是唯一确认可商用的。
-
-## 复现
-
-```bash
-curl -sSL -o CN.zip https://download.geonames.org/export/dump/CN.zip
-unzip CN.zip   # 得到 CN.txt，制表符分隔
-# 列：1 geonameid 2 name 3 asciiname 4 alternatenames 5 lat 6 lng 7 class 8 code
-#     11 admin1 12 admin2 13 admin3
-# 抽 $8 ∈ {ADM1,ADM2,ADM3}，按 admin code 拼层级名，中文名取自 $4
-```
+AreaCity、cn-pcas-geo 等仓库虽挂 MIT，但坐标抓自高德，高德条款禁止存储与生成数据库，
+**仓库作者无权转授**。GeoNames（CC BY）与 Wikidata（CC0）是确认可商用的两个。

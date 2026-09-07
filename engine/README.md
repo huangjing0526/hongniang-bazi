@@ -49,9 +49,10 @@ npm test         # 11 条回归
 
 ## 数据与署名
 
-出生地经纬度来自 **[GeoNames](https://www.geonames.org/) 中国 dump，CC BY 4.0**，3301 条（省 31 / 市 360 / 区县 2938，去重后）。
-**CC BY 要求署名，产品界面与本文件的 GeoNames 链接不可删除。** 抽取方式、坐标注意事项与选型理由见
-[`data/cities.SOURCE.md`](data/cities.SOURCE.md)。
+出生地名录以**民政部 2023 年行政区划代码表**为准（省 31 / 地级 333 / 县级 2842，共 3206 条，港澳台暂不收）；
+经纬度来自 **[GeoNames](https://www.geonames.org/) 中国 dump，CC BY 4.0**，GeoNames 没有的 51 条补自 **Wikidata（CC0）**。
+**CC BY 要求署名，产品界面与本文件的 GeoNames 链接不可删除。** 重建脚本 `scripts/build-cities.mjs`，
+抽取方式、坐标注意事项与选型理由见 [`data/cities.SOURCE.md`](data/cities.SOURCE.md)。
 
 历法底座 `lunar-javascript`（MIT）。十神 / 藏干 / 十二长生 / 神煞表据古籍自研，不取自 GPL 实现。
 

@@ -3,7 +3,8 @@ import cities from '../data/cities.json' with { type: 'json' };
 const normalize = (value) => String(value ?? '').trim().toLowerCase().replace(/\s+/g, '');
 
 // 行政区划后缀。长的放前面，否则「自治区」会先被 `区` 吃掉一截。
-const SUFFIX = /(特别行政区|自治区|自治州|自治县|省|市|区|县|旗|盟)$/;
+// scripts/build-cities.mjs 也用它对 GeoNames 的名字取词干，两边必须是同一份。
+export const SUFFIX = /(特别行政区|自治区|自治州|自治县|自治旗|林区|特区|新区|矿区|省|市|区|县|旗|盟)$/;
 const bare = (segment) => segment.replace(SUFFIX, '') || segment;
 
 // 直辖市。老师搜「朝阳」十有八九找的是北京朝阳区，不是辽宁朝阳市。
@@ -20,16 +21,24 @@ function sameName(segment, query) {
 
 /**
  * 匹配质量。
- * - exact：查询指的就是这个地方本身（末段同名）
+ * - exact：查询指的就是这个地方本身（末段同名，或旧名同名——「新建县」就是「新建区」）
  * - child：查询指的是它的上级（某一非末段同名），它是下辖的一个区县
  * - loose：只是名字里出现了这几个字，说不好是不是同一回事
+ * @param {{name:string,aliases?:string[]}} city 名录条目
  */
-export function cityMatchQuality(name, query) {
+export function cityMatchQuality(city, query) {
   const q = normalize(query);
-  const segs = segmentsOf(name);
+  const segs = segmentsOf(city.name);
   if (segs.length && sameName(normalize(segs[segs.length - 1]), q)) return 'exact';
+  if ((city.aliases ?? []).some((a) => sameName(normalize(a), q))) return 'exact';
   if (segs.slice(0, -1).some((s) => sameName(normalize(s), q))) return 'child';
   return 'loose';
+}
+
+/** 查询是否命中这一条：展示名或旧名里出现这几个字 */
+function matches(city, keyword) {
+  return normalize(city.name).includes(keyword)
+    || (city.aliases ?? []).some((a) => normalize(a).includes(keyword));
 }
 
 const QUALITY_SCORE = { exact: 100, child: 50, loose: 0 };
@@ -46,10 +55,10 @@ export function lookupCity(query) {
   if (!keyword) return [];
 
   return cities
-    .filter((city) => normalize(city.name).includes(keyword))
+    .filter((city) => matches(city, keyword))
     .map((city) => {
       const segs = segmentsOf(city.name);
-      const score = QUALITY_SCORE[cityMatchQuality(city.name, keyword)]
+      const score = QUALITY_SCORE[cityMatchQuality(city, keyword)]
         + (MUNICIPALITIES.has(segs[0]) ? 20 : 0);
       return { city, score, segs };
     })
@@ -74,7 +83,7 @@ export function resolveCity(query) {
 
   // 只有一条候选就没什么可歧义的（「浦东」只对得上浦东新区）。
   // 多条时看「就是它本身」那一档跨不跨省：跨省才是真要人来选的歧义。
-  const exact = candidates.filter((c) => cityMatchQuality(c.name, query) === 'exact');
+  const exact = candidates.filter((c) => cityMatchQuality(c, query) === 'exact');
   const provinces = new Set(exact.map((c) => segmentsOf(c.name)[0]));
   const ambiguous = candidates.length > 1 && (exact.length === 0 || provinces.size > 1);
 
