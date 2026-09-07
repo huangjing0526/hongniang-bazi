@@ -1773,6 +1773,7 @@ function renderCompareSection(cmp, ordinal) {
               <label><input type="radio" name="compare-time-source" value="家人口述"> 家人口述</label>
               <label><input type="radio" name="compare-time-source" value="客户自报"> 客户自报</label>
             </div>
+            <div id="compare-error" class="field-error-text"></div>
             <button type="button" class="primary-btn" onclick="window.app.submitCompareVerdict()">确认并记录</button>
           </div>` : ''}
       </div>
@@ -1795,7 +1796,7 @@ export function submitCompareVerdict() {
 
   const sourceEl = document.querySelector('input[name="compare-time-source"]:checked');
   if (!sourceEl) {
-    showToast('❌ 请先选出生时间的来源：出生证 / 家人口述 / 客户自报');
+    setHtml('compare-error', '请先选出生时间的来源：出生证 / 家人口述 / 客户自报');
     return;
   }
 
@@ -1862,11 +1863,35 @@ export function renderVerdictsList() {
     </div>
   `;
 
-  for (let idx = state.verdicts.length - 1; idx >= 0; idx--) {
-    const v = state.verdicts[idx];
-    const isConsistent = v.disputedPillars.length === 0;
+  // 按命例分组，最近有动静的命例排在前面；组内新的在上。
+  // 老师核 30 个盘、每盘留一两条，平铺成一列后要找某个人的裁定得翻半天。
+  const groups = new Map();
+  state.verdicts.forEach((v, idx) => {
+    if (!groups.has(v.chartId)) groups.set(v.chartId, []);
+    groups.get(v.chartId).push(idx);
+  });
+  const ordered = [...groups.values()].sort((a, b) => b[b.length - 1] - a[a.length - 1]);
 
+  for (const idxs of ordered) {
+    const first = state.verdicts[idxs[0]];
     html += `
+      <div class="verdict-group">
+        <div class="verdict-group-head">
+          <span class="verdict-group-name">${escapeHtml(verdictChartLabel(first, caseById))}</span>
+          <span class="verdict-group-count">${idxs.length} 条</span>
+        </div>`;
+    for (let i = idxs.length - 1; i >= 0; i--) html += verdictCardHtml(idxs[i]);
+    html += '</div>';
+  }
+
+  container.innerHTML = html;
+}
+
+/** 一张裁定卡。命盘标签在组头上，卡片里不再重复。 */
+function verdictCardHtml(idx) {
+  const v = state.verdicts[idx];
+  const isConsistent = v.disputedPillars.length === 0;
+  return `
       <div class="verdict-card ${isConsistent ? 'card-consistent' : 'card-disputed'}">
         <div class="verdict-card-header">
           <span class="verdict-tag ${isConsistent ? 'tag-consistent' : 'tag-disputed'}">
@@ -1876,7 +1901,6 @@ export function renderVerdictsList() {
           <button class="verdict-del-btn" onclick="window.app.deleteVerdict(${idx})">删除</button>
         </div>
         <div class="verdict-card-body">
-          <div class="verdict-prop"><strong>命盘</strong>：${escapeHtml(verdictChartLabel(v, caseById))}</div>
           ${v.ourGanZhi ? `<div class="verdict-prop"><strong>我们排的</strong>：${escapeHtml(v.ourGanZhi)}</div>` : ''}
           <div class="verdict-prop"><strong>当时口径</strong>：${escapeHtml(chartOptionsLabel(v.options))}</div>
           ${
@@ -1897,9 +1921,6 @@ export function renderVerdictsList() {
         </div>
       </div>
     `;
-  }
-
-  container.innerHTML = html;
 }
 
 /** 渲染批量命例列表 */
@@ -2056,7 +2077,10 @@ export function apply12DigitInput() {
   const raw = inputEl.value;
   const res = parse12Digit(raw);
   if (!res.valid) {
-    showToast(res.message);
+    // 错在哪就写在输入框底下，别让提示在屏幕另一头闪三秒就没了
+    const preview = document.getElementById('quick-12-preview');
+    if (preview) { preview.innerText = `✗ ${res.message}`; preview.className = 'quick-preview invalid'; }
+    inputEl.focus();
     return;
   }
 
@@ -2327,12 +2351,13 @@ export function clearBatchCases() {
 
 /** 载入典型测试样盘库 */
 export async function loadSampleCases() {
+  // 出生地写到区县：只写「兰州」会落成地级市质心，和内置样盘的城关区变成两条 Alanzhou
   const samples = [
-    'Alanzhou 199608101203 兰州 坤造 出生证',
-    '兰州夏令时 198807151100 兰州 乾造 家人口述',
-    '子时交界 199303272330 兰州 乾造 客户自报',
-    '夏令时重复时 198609140130 兰州 坤造 出生证',
-    '立秋交节 202608071940 北京 坤造 出生证',
+    'Alanzhou 199608101203 兰州市城关区 坤造 出生证',
+    '兰州夏令时 198807151100 兰州市城关区 乾造 家人口述',
+    '子时交界 199303272330 兰州市城关区 乾造 客户自报',
+    '夏令时重复时 198609140130 兰州市城关区 坤造 出生证',
+    '立秋交节 202608071940 北京市东城区 坤造 出生证',
   ];
 
   const textEl = document.getElementById('batch-textarea');
@@ -2412,15 +2437,33 @@ function loadCaseToChart(c, index) {
   renderBatchList();
 }
 
+/**
+ * 裁定表单的校验错误：写在提交按钮上方、把出错的那一栏标红并滚过去。
+ * 原来只 toast 三秒，电脑上 toast 在屏幕底部、表单在右上角，老师根本对不上是哪一栏错了。
+ * @param {string} message 空串即清除
+ * @param {string} [rowId] 出错的 .input-row 的 id
+ */
+function showVerdictError(message, rowId) {
+  for (const el of document.querySelectorAll('#verdict-form-section .field-error')) el.classList.remove('field-error');
+  setHtml('verdict-error', escapeHtml(message));
+  if (!message) return;
+  const row = rowId && document.getElementById(rowId);
+  if (row) {
+    row.classList.add('field-error');
+    row.scrollIntoView({ block: 'nearest' });
+  }
+}
+
 /** 提交老师裁定（§13.2） */
 export function submitVerdict() {
   const chart = getActiveChart();
   if (!chart) return;
+  showVerdictError('');
 
   // 1. 获取时间来源（必填项！）
   const timeSourceEl = document.querySelector('input[name="verdict-time-source"]:checked');
   if (!timeSourceEl) {
-    showToast('❌ 时间来源为必填项！请选择：出生证 / 家人口述 / 客户自报');
+    showVerdictError('请选时间来源：出生证 / 家人口述 / 客户自报', 'verdict-row-time-source');
     return;
   }
   const timeSource = timeSourceEl.value;
@@ -2440,18 +2483,18 @@ export function submitVerdict() {
       const gan = document.getElementById(`verdict-gan-${k}`)?.value || '';
       const zhi = document.getElementById(`verdict-zhi-${k}`)?.value || '';
       if (!gan || !zhi) {
-        showToast(`❌ 请填写${PILLAR_NAMES[k]}您认为正确的干支——只勾"有分歧"我们不知道该改成什么`);
+        showVerdictError(`请填${PILLAR_NAMES[k]}您认为正确的干支——只勾「有分歧」我们不知道该改成什么`, `verdict-group-${k}`);
         return;
       }
       if (!isValidGanZhi(gan, zhi)) {
-        showToast(`❌ ${PILLAR_NAMES[k]}「${gan}${zhi}」不在六十甲子内（阳干只配阳支、阴干只配阴支），请重选`);
+        showVerdictError(`${PILLAR_NAMES[k]}「${gan}${zhi}」不在六十甲子内（阳干只配阳支、阴干只配阴支），请重选`, `verdict-group-${k}`);
         return;
       }
       teacherGanZhi[k] = `${gan}${zhi}`;
     }
 
     if (disputedPillars.length === 0) {
-      showToast('请勾选分歧柱（或勾选「与我们一致」）');
+      showVerdictError('请勾出有分歧的柱，排得对就勾「与我们一致」', 'verdict-row-pillars');
       return;
     }
   }
@@ -2545,7 +2588,15 @@ function resetVerdictForm() {
   const schoolSelect = document.getElementById('verdict-school-select');
   if (schoolSelect) schoolSelect.value = '';
   const schoolCustom = document.getElementById('verdict-school-custom');
-  if (schoolCustom) schoolCustom.value = '';
+  if (schoolCustom) { schoolCustom.value = ''; schoolCustom.style.display = 'none'; }
+}
+
+/** 依据流派选了「自定」才露出文本框 */
+export function onSchoolChange(value) {
+  const custom = document.getElementById('verdict-school-custom');
+  if (!custom) return;
+  custom.style.display = value === 'custom' ? 'block' : 'none';
+  if (value === 'custom') custom.focus();
 }
 
 /** 勾选「与我们一致」时自动取消其他柱 */
@@ -2691,6 +2742,7 @@ if (typeof window !== 'undefined') {
       selectBatchCase,
       submitVerdict,
       onConsistentToggle,
+      onSchoolChange,
       onDisputedPillarToggle,
       pickCompareSide,
       submitCompareVerdict,

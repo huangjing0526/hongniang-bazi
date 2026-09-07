@@ -1023,6 +1023,38 @@ body::before {
 .verdict-footer {
   padding-top: 10px;
 }
+/* 表单校验错误：文字放提交按钮上方，出错的那一栏左侧描朱线 */
+.field-error-text {
+  font-size: 12px;
+  color: var(--cinnabar);
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+.field-error-text:empty { display: none; }
+.input-row.field-error,
+.pillar-gz-item.field-error {
+  box-shadow: -3px 0 0 var(--cinnabar);
+  padding-left: 8px;
+}
+
+/* 裁定历史按命例分组 */
+.verdict-group { margin-bottom: 16px; }
+.verdict-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--cinnabar);
+  background: var(--paper-2);
+  margin-bottom: 8px;
+}
+.verdict-group-name {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-weight: 700;
+}
+.verdict-group-count { font-size: 11px; color: var(--ink-5); white-space: nowrap; }
 .disputed-pillars-grid {
   display: flex;
   gap: 12px;
@@ -1559,7 +1591,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
     <!-- 宽屏吸顶时只有这一段可滚，提交按钮在 .verdict-footer 里常驻可见 -->
     <div class="verdict-body">
 
-    <div class="input-row">
+    <div class="input-row" id="verdict-row-pillars">
       <label class="input-label">分歧柱判定</label>
       <div class="disputed-pillars-grid">
         <label><input type="checkbox" id="verdict-consistent" onchange="window.app.onConsistentToggle(this.checked)"> 与我们一致 (无分歧)</label>
@@ -1597,7 +1629,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
       </div>
     </div>
 
-    <div class="input-row">
+    <div class="input-row" id="verdict-row-time-source">
       <label class="input-label" title="出生时间本身就是客户回忆的，那不管谁排都可能不准——那是记录的问题不是算法的问题。这一栏是唯一能把两者分开的依据，所以必填、不预选。">时间来源<span class="verdict-req">*</span><span class="input-label-hint">必填 · 分开「记录有误」与「历法分歧」</span></label>
       <div class="radio-group">
         <label><input type="radio" name="verdict-time-source" value="出生证"> 出生证</label>
@@ -1608,7 +1640,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
 
     <div class="input-row">
       <label class="input-label" for="verdict-school-select">依据流派</label>
-      <select id="verdict-school-select" class="select-input">
+      <select id="verdict-school-select" class="select-input" onchange="window.app.onSchoolChange(this.value)">
         <option value="">请选择（不确定可留空）</option>
         <option value="子平真诠">子平真诠</option>
         <option value="滴天髓">滴天髓</option>
@@ -1619,7 +1651,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
                 <option value="家传师承">家传 / 师承实战</option>
         <option value="custom">自定流派...</option>
       </select>
-      <input type="text" id="verdict-school-custom" class="text-input" placeholder="若选自定，在此填写流派名称" style="margin-top:4px;">
+      <input type="text" id="verdict-school-custom" class="text-input" placeholder="填写流派名称" style="margin-top:4px;display:none;">
     </div>
 
     <!-- 神煞表源异议：可选、折叠。四条带星神煞各家表不一样，请老师说该用哪一派。
@@ -1637,6 +1669,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
     </div><!-- .verdict-body -->
 
     <div class="verdict-footer">
+      <div id="verdict-error" class="field-error-text"></div>
       <button class="primary-btn" onclick="window.app.submitVerdict()">提交老师裁定</button>
     </div>
   </div>
