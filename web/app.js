@@ -2825,6 +2825,10 @@ if (typeof window !== 'undefined') {
 
     // 首盘已出，撤下遮罩——在这之前页面上是骨架里的占位盘，不能让老师看见
     document.body.classList.remove('engine-loading');
+
+    // 没登记也没选「只在本机用」的，打开就请他填称呼——右上角那行小字老师根本注意不到。
+    // 点「关闭」只是这次先不填，下次打开还会问；选了「先不登记」才不再问。
+    if (state.sync.status === 'unregistered') openSyncPanel();
   };
 
   if (document.readyState === 'loading') {
