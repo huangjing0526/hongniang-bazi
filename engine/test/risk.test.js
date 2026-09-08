@@ -36,5 +36,5 @@ test('节气当天报 jie_qi_day，24 项都算，按北京时日期判', () => 
     .charts[0].risks.find((r) => r.kind === 'jie_qi_day');
   assert.equal(risk.level, 'info');
   assert.equal(risk.term.name, '白露');
-  assert.deepEqual(risk.term.at, { year: 2026, month: 9, day: 7, hour: 22, minute: 41 });
+  assert.deepEqual(risk.term.at, { year: 2026, month: 9, day: 7, hour: 22, minute: 41, second: 16 });
 });

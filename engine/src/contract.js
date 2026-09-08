@@ -52,6 +52,8 @@ export const RISK_KIND = /** @type {const} */ ({
   JIE_QI: 'jie_qi',           // 距交节 < 6 小时
   JIE_QI_DAY: 'jie_qi_day',   // 出生日是 24 节气当天（按北京时日期），前端据此默认早晚子时
   CITY_UNKNOWN: 'city_unknown', // 出生地没落实，经度按 120 度顶着算
+  CALENDAR_MISMATCH: 'calendar_mismatch',     // 节气冻结表与 lunar-javascript 对本年不一致（正常永不触发）
+  CALENDAR_UNVERIFIED: 'calendar_unverified', // 年份在冻结表 1900–2100 之外，节气时刻未经验证
 });
 
 export const RISK_LEVEL = /** @type {const} */ ({ INFO: 'info', WARN: 'warn' });

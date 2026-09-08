@@ -29,6 +29,7 @@ const FILES = [
   ['engine/src/solartime.js', 'engine/src/solartime.js'],
   ['engine/src/tables.js', 'engine/src/tables.js'],
   ['engine/data/cities.json', 'engine/data/cities.json'],
+  ['engine/data/jieqi-1900-2100.js', 'engine/data/jieqi-1900-2100.js'],
   ['engine/node_modules/lunar-javascript/lunar.js', 'engine/node_modules/lunar-javascript/lunar.js'],
 ];
 

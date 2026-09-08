@@ -10,5 +10,8 @@
   },
   "dependencies": {
     "lunar-javascript": "^1.7.3"
+  },
+  "devDependencies": {
+    "astronomia": "^4.2.0"
   }
 }

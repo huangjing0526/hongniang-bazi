@@ -1,6 +1,6 @@
 import { RISK_KIND, RISK_LEVEL } from './contract.js';
 import { classifyDst, DST_STATUS } from './dst.js';
-import { jieQiOfDay, nearestJie, fmtTerm } from './calendar.js';
+import { jieQiOfDay, nearestJie, fmtTerm, isYearVerified, calendarMismatches, TABLE_RANGE } from './calendar.js';
 
 /** 根据已计算的三层时间生成分歧风险。 */
 export function buildRisks({ clock, beijing, trueSolar, solarOffset, cityKnown = true }) {
@@ -25,6 +25,16 @@ export function buildRisks({ clock, beijing, trueSolar, solarOffset, cityKnown =
   const boundaryDistance = Math.min(remainder, 120 - remainder);
   if (Math.abs(solarOffset.totalMinutes) > boundaryDistance) risks.push({ kind:RISK_KIND.TRUE_SOLAR, level:RISK_LEVEL.WARN, message:'真太阳时校正会跨过时辰边界，开启与关闭校正所得时柱不同。', affects:['day','time'] });
   if (trueSolar.hour === 23 || trueSolar.hour === 0) risks.push({ kind:RISK_KIND.ZI_SHI, level:RISK_LEVEL.WARN, message:'真太阳时处于子时交界，不同换日流派可能得到不同日柱和时柱。', affects:['day','time'] });
+  // 万年历底座自检：表外年份说「没验证过」，表内年份两套历法对不上就亮警——都不静默
+  if (!isYearVerified(beijing.year)) {
+    risks.push({ kind:RISK_KIND.CALENDAR_UNVERIFIED, level:RISK_LEVEL.WARN, message:`${beijing.year} 年在节气冻结表（${TABLE_RANGE.from}–${TABLE_RANGE.to}）之外，交节时刻未经交叉验证，年柱、月柱请对照万年历复核。`, affects:['year','month'] });
+  } else {
+    const mismatches = calendarMismatches(beijing.year);
+    if (mismatches.length) {
+      const detail = mismatches.map((m) => `${m.name} ${fmtTerm(m.table)} / ${fmtTerm(m.lunar)}`).join('，');
+      risks.push({ kind:RISK_KIND.CALENDAR_MISMATCH, level:RISK_LEVEL.WARN, message:`本年节气时刻两套历法不一致（冻结表 / 历法库）：${detail}。请以万年历页为准并反馈给我们。`, affects:['year','month'] });
+    }
+  }
   const jie = nearestJie(beijing);
   if (jie && jie.distance < 360) risks.push({ kind:RISK_KIND.JIE_QI, level:RISK_LEVEL.WARN, message:`距${jie.name}交节（${fmtTerm(jie)}）不足六小时，年柱或月柱可能因时间误差而变化。`, affects:['year','month'] });
   // 节气当天（按北京时的公历日期，24 项都算）：老师的口径是这天默认按早晚子时排。
