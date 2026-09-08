@@ -4,6 +4,8 @@
 
 import { computeChart } from '../engine/src/chart.js';
 import { fmt } from '../engine/src/solartime.js';
+import { mount as mountDateTimePicker } from './components/datetime-picker.js';
+import { mount as mountRegionPicker } from './components/region-picker.js';
 import {
   PILLAR_KEYS,
   DETAIL_ROWS,
@@ -135,6 +137,7 @@ async function initCityData() {
     const cityModule = await import('../engine/src/city.js');
     state.lookupCityFn = cityModule.lookupCity;
     state.resolveCityFn = cityModule.resolveCity;
+    state.cities = cityModule.allCities();
   } catch (err) {
     // 兜底方案没有加权排序也没有歧义判断，只保证「还能查」。
     // 一旦走到这里，批量解析一律按「有歧义」处理，宁可多问一句也不静默选错地方。
@@ -158,10 +161,21 @@ async function initCityData() {
       state.resolveCityFn = () => ({ city: null, candidates: [], ambiguous: false });
     }
   }
+  feedRegionPickers();
 }
 
 // 批量行里认不出出生地时的占位名。经度会兜底成 120，引擎据此报 CITY_UNKNOWN 风险。
 const UNKNOWN_CITY = '未知地（按标准时）';
+
+// 快速录入区的两个通用控件（web/components/）。boot 时挂上；重名确认条上的那个每次渲染重挂。
+const pickers = { dtp: null, region: null, confirmRegion: null };
+
+/** 城市库到了就喂给所有已挂载的出生地控件 */
+function feedRegionPickers() {
+  for (const key of ['region', 'confirmRegion']) {
+    pickers[key]?.setCities(state.cities, state.lookupCityFn);
+  }
+}
 
 const CASES_KEY = 'bazi_cases';
 const LEGACY_CASES_KEY = 'bazi_batch_cases';
@@ -1178,11 +1192,20 @@ function renderCityConfirmBar() {
   el.style.display = 'block';
   el.innerHTML = `<strong>出生地待确认</strong>：这个地名有多处同名，当前按
     <strong>${escapeHtml(state.input.cityName)}</strong> 排的。不对就在下面改选，盘会立刻重排。
-    <div>${chips}</div>`;
+    <div>${chips}</div>
+    <div class="city-confirm-other">都不是？按省市区县选：<div id="city-confirm-picker"></div></div>`;
+  pickers.confirmRegion?.destroy();
+  pickers.confirmRegion = mountRegionPicker(document.getElementById('city-confirm-picker'), {
+    value: state.input.cityName,
+    cities: state.cities,
+    lookup: state.lookupCityFn,
+    requireLeaf: true,
+    onChange: (entry) => confirmCaseCity(entry.name, entry.lng, entry.approx),
+  });
 }
 
 /** 老师在待确认条上敲定出生地：改盘、改命例，并撤下这条 */
-export function confirmCaseCity(name, lng) {
+export function confirmCaseCity(name, lng, approx = false) {
   const c = state.cases[state.activeCaseIndex];
   if (c) {
     const oldId = c.id;
@@ -1207,7 +1230,7 @@ export function confirmCaseCity(name, lng) {
     persistCases();
     renderBatchList();
   }
-  selectCity(name, lng);   // 内部会 runCompute，顺带刷新待确认条
+  selectCity(name, lng, approx);   // 内部会 runCompute，顺带刷新待确认条
 }
 
 /**
@@ -2136,60 +2159,6 @@ export function apply12DigitInput() {
   showToast(`已成功录入并排盘：${res.formatted}`);
 }
 
-/** 城市检索输入 */
-/** 展示名的层级：一段=省、两段=市、三段及以上=区县。 */
-function cityLevelLabel(name) {
-  const depth = String(name || '').trim().split(/\s+/).filter(Boolean).length;
-  if (depth >= 3) return '区县';
-  if (depth === 2) return '市 · 辖区质心';
-  return '省';
-}
-
-export function onCitySearchInput(query) {
-  const listEl = document.getElementById('city-search-results');
-  if (!listEl) return;
-
-  if (!query || !query.trim()) {
-    listEl.style.display = 'none';
-    listEl.innerHTML = '';
-    return;
-  }
-
-  // 城市库还在路上：给个说法，别让下拉空着像是没匹配到
-  if (!state.lookupCityFn) {
-    listEl.style.display = 'block';
-    listEl.innerHTML = '<div class="city-opt-item empty">城市库加载中…</div>';
-    whenCityDataReady().then(() => {
-      const inputEl = document.getElementById('city-search-input');
-      if (inputEl && inputEl.value.trim()) onCitySearchInput(inputEl.value);
-    });
-    return;
-  }
-
-  const matches = state.lookupCityFn(query).slice(0, 10);
-  if (matches.length === 0) {
-    listEl.style.display = 'block';
-    // 名录再全也有漏。给老师一条不卡住的路，并让我们知道缺了哪个地名
-    listEl.innerHTML = `<div class="city-opt-item empty">没找到「${escapeHtml(query.trim())}」。
-      可先选到所在的市（经度差几分钟），并把这个区县名告诉我们补上。</div>`;
-    return;
-  }
-
-  let html = '';
-  matches.forEach((c) => {
-    html += `
-      <div class="city-opt-item" onclick="window.app.selectCity('${escapeHtml(c.name)}', ${c.lng}, ${Boolean(c.approx)})">
-        <span class="city-name">${escapeHtml(c.name)}</span>
-        <span class="city-level">${c.approx ? '坐标待补' : cityLevelLabel(c.name)}</span>
-        <span class="city-lng">${c.lng}°E</span>
-      </div>
-    `;
-  });
-
-  listEl.style.display = 'block';
-  listEl.innerHTML = html;
-}
-
 /**
  * 出生地精度提示。
  * GeoNames 的地级市（ADM2）坐标是整个辖区的质心，不是市中心——例如杭州市 119.60
@@ -2230,15 +2199,10 @@ export function selectCity(name, lng, approx = false) {
   state.input.longitude = lng;
   state.input.cityKnown = true;
   renderCityPrecisionHint(name, approx);
-
-  const cityInput = document.getElementById('city-search-input');
-  if (cityInput) cityInput.value = name;
+  pickers.region?.setValue(name);
 
   const lngInput = document.getElementById('custom-lng-input');
   if (lngInput) lngInput.value = lng;
-
-  const listEl = document.getElementById('city-search-results');
-  if (listEl) listEl.style.display = 'none';
 
   runCompute();
   showToast(`已选择城市：${name} (${lng}°E)`);
@@ -2273,10 +2237,11 @@ export function clearQuickInput() {
     cityKnown: false,   // 没填出生地，引擎会报 CITY_UNKNOWN，别让它悄悄按 120 度算
   });
 
-  for (const id of ['quick-12-input', 'quick-name-input', 'city-search-input']) {
+  for (const id of ['quick-12-input', 'quick-name-input']) {
     const el = document.getElementById(id);
     if (el) el.value = '';
   }
+  pickers.region?.setValue('');
   const lng = document.getElementById('custom-lng-input');
   if (lng) lng.value = 120;
   const preview = document.getElementById('quick-12-preview');
@@ -2448,6 +2413,7 @@ function syncQuickInputForm() {
 
   const q12 = document.getElementById('quick-12-input');
   if (q12) q12.value = `${year}${pad(month)}${pad(day)}${pad(hour)}${pad(minute)}`;
+  pickers.dtp?.setValue({ year, month, day, hour, minute });
 
   const preview = document.getElementById('quick-12-preview');
   if (preview) {
@@ -2461,8 +2427,7 @@ function syncQuickInputForm() {
   const genderRadio = document.querySelector(`input[name="quick-gender"][value="${gender}"]`);
   if (genderRadio) genderRadio.checked = true;
 
-  const cityInput = document.getElementById('city-search-input');
-  if (cityInput) cityInput.value = cityName ?? '';
+  pickers.region?.setValue(cityName ?? '');
 
   const lngInput = document.getElementById('custom-lng-input');
   if (lngInput) lngInput.value = longitude;
@@ -2784,7 +2749,6 @@ if (typeof window !== 'undefined') {
       closeShenShaPop,
       disputeShenSha,
       apply12DigitInput,
-      onCitySearchInput,
       selectCity,
       setLongitude,
       confirmCaseCity,
@@ -2835,9 +2799,31 @@ if (typeof window !== 'undefined') {
     // 拉到东西时 persist 已经排了一次推送，这里再排只是重置同一个定时器，不会推两遍。
     pullFromServer().finally(scheduleSync);
 
-    // 监听 12 位快速输入的实时输入，满 12 位时自动预览格式
+    // 时间下拉与 12 位框双向同步：改下拉 → 改写 12 位框；敲满 12 位且合法 → 回填下拉。
+    // 两边都只是编辑输入，真正解析并排盘仍是「立即解析并排盘」那个按钮（走 12 位框）。
     const q12 = document.getElementById('quick-12-input');
     const preview = document.getElementById('quick-12-preview');
+    const pad = (n) => String(n).padStart(2, '0');
+    const dtpEl = document.getElementById('quick-dtp');
+    if (dtpEl) {
+      pickers.dtp = mountDateTimePicker(dtpEl, {
+        value: state.input,
+        onChange: (v) => {
+          if (!q12) return;
+          q12.value = `${v.year}${pad(v.month)}${pad(v.day)}${pad(v.hour)}${pad(v.minute)}`;
+          q12.dispatchEvent(new Event('input'));
+        },
+      });
+    }
+    const regionEl = document.getElementById('quick-region');
+    if (regionEl) {
+      pickers.region = mountRegionPicker(regionEl, {
+        value: state.input.cityName,
+        cities: state.cities.length ? state.cities : undefined,
+        lookup: state.lookupCityFn ?? undefined,
+        onChange: (entry) => selectCity(entry.name, entry.lng, entry.approx),
+      });
+    }
     if (q12 && preview) {
       q12.addEventListener('input', () => {
         const val = q12.value.trim();
@@ -2846,6 +2832,7 @@ if (typeof window !== 'undefined') {
           if (res.valid) {
             preview.innerText = `✓ 识别为：${res.formatted}`;
             preview.className = 'quick-preview valid';
+            pickers.dtp?.setValue(res.data);
           } else {
             preview.innerText = `✗ ${res.message}`;
             preview.className = 'quick-preview invalid';

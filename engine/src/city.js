@@ -1,5 +1,8 @@
 import cities from '../data/cities.json' with { type: 'json' };
 
+/** 全部名录，按名称排序的原始顺序。级联下拉要整棵树，从这里拿，别再 fetch 一份 json */
+export const allCities = () => cities;
+
 const normalize = (value) => String(value ?? '').trim().toLowerCase().replace(/\s+/g, '');
 
 // 行政区划后缀。长的放前面，否则「自治区」会先被 `区` 吃掉一截。
@@ -8,7 +11,7 @@ export const SUFFIX = /(特别行政区|自治区|自治州|自治县|自治旗|
 const bare = (segment) => segment.replace(SUFFIX, '') || segment;
 
 // 直辖市。老师搜「朝阳」十有八九找的是北京朝阳区，不是辽宁朝阳市。
-const MUNICIPALITIES = new Set(['北京市', '上海市', '天津市', '重庆市']);
+export const MUNICIPALITIES = new Set(['北京市', '上海市', '天津市', '重庆市']);
 
 /** 展示名按空格分段：省 / 市 / 区县 */
 const segmentsOf = (name) => String(name).trim().split(/\s+/).filter(Boolean);

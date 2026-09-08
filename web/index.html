@@ -764,6 +764,19 @@ body::before {
   font-size: 12px;
   margin-top: 4px;
 }
+
+/* 通用时间控件：五个下拉一行，窄屏自动折行 */
+.dtp { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.dtp-field { display: inline-flex; align-items: center; gap: 4px; }
+.dtp-select { width: auto; padding: 8px 6px; }
+.dtp-year .dtp-select { min-width: 5.2em; }
+.dtp-hour .dtp-select { min-width: 5em; }
+.dtp-unit { font-size: 12px; color: var(--ink-3); }
+
+/* 通用出生地控件：三级联动一行，搜索框在下 */
+.rp-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.rp-row .rp-select { flex: 1; min-width: 0; padding: 8px 6px; }
+.rp-row .rp-select[hidden] { display: none; }
 .quick-preview.valid { color: var(--wood); font-weight: 500; }
 .quick-preview.invalid { color: var(--cinnabar); }
 .quick-preview.typing { color: var(--ink-5); }
@@ -1192,6 +1205,8 @@ body::before {
   cursor: pointer;
 }
 .city-confirm-alt.current { border-color: var(--cinnabar); color: var(--cinnabar); }
+.city-confirm-other { margin-top: 8px; }
+.city-confirm-other .rp { margin-top: 4px; }
 
 /* 裁定记录管理 Tab */
 .verdicts-container {
@@ -1454,14 +1469,18 @@ body.engine-loading #engine-loading { display: flex; }
     </div>
     <div class="card-box">
       <div class="card-title">
-        <span>12 位数字速记录入</span>
-        <span style="font-size:11px;color:var(--cinnabar);font-weight:normal;">一串数字直接敲</span>
+        <span>录入出生信息</span>
+        <span style="font-size:11px;color:var(--cinnabar);font-weight:normal;">下拉选，或一串数字直接敲</span>
       </div>
       <div class="card-sub">
-        直接键入 12 位紧凑纯数字（年4+月2+日2+时2+分2），如 <code>199303270255</code> → 1993-03-27 02:55。
+        时间用下拉选，或直接键入 12 位纯数字（年4+月2+日2+时2+分2），如 <code>199303270255</code> → 1993-03-27 02:55，两边自动同步。
       </div>
       <div class="input-row">
-        <label class="input-label" for="quick-12-input">12 位出生时间</label>
+        <label class="input-label">出生时间（年 / 月 / 日 / 时 / 分）</label>
+        <div id="quick-dtp"></div>
+      </div>
+      <div class="input-row">
+        <label class="input-label" for="quick-12-input">或敲 12 位数字（两边自动同步）</label>
         <input type="text" id="quick-12-input" class="text-input" inputmode="numeric" autocomplete="off" placeholder="例如：199303270255" maxlength="12" value="199608101203">
         <div id="quick-12-preview" class="quick-preview valid">✓ 识别为：1996-08-10 12:03</div>
       </div>
@@ -1477,15 +1496,10 @@ body.engine-loading #engine-loading { display: flex; }
         </div>
       </div>
       <div class="input-row">
-        <label class="input-label" for="city-search-input">出生地点（查经度以核校真太阳时）</label>
-        <div class="city-search-wrap">
-          <input type="text" id="city-search-input" class="text-input" placeholder="输入省、市或区县模糊搜索，如：兰州、朝阳" value="甘肃省 兰州市 城关区" oninput="window.app.onCitySearchInput(this.value)">
-          <div id="city-search-results" class="city-results-drop"></div>
-        </div>
+        <label class="input-label">出生地点（省 / 市 / 区县，查经度以核校真太阳时）</label>
+        <div id="quick-region"></div>
         <!-- 只选到省/市时提示精确到区县：地级市坐标是辖区质心，不是市中心 -->
         <div id="city-precision-hint" class="city-precision-hint" style="display:none"></div>
-        <div style="display:none">
-        </div>
       </div>
       <div class="input-row">
         <label class="input-label" for="custom-lng-input">经度微调 (°E)</label>
