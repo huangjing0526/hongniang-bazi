@@ -50,6 +50,7 @@ export const RISK_KIND = /** @type {const} */ ({
   TRUE_SOLAR: 'true_solar',   // 真太阳时偏移足以跨时辰
   ZI_SHI: 'zi_shi',           // 23:00–01:00，子时两派日柱不同
   JIE_QI: 'jie_qi',           // 距交节 < 6 小时
+  JIE_QI_DAY: 'jie_qi_day',   // 出生日是 24 节气当天（按北京时日期），前端据此默认早晚子时
   CITY_UNKNOWN: 'city_unknown', // 出生地没落实，经度按 120 度顶着算
 });
 
@@ -61,6 +62,7 @@ export const RISK_LEVEL = /** @type {const} */ ({ INFO: 'info', WARN: 'warn' });
  * @property {string} level    RISK_LEVEL 之一
  * @property {string} message  给老师看的一句话，中文，不含术语缩写
  * @property {string[]} affects  受影响的柱，PILLAR_KEYS 子集
+ * @property {{name:string, at:object}} [term]  仅 JIE_QI_DAY：当天的节气名与交节时刻（北京时间）
  */
 
 /**

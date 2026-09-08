@@ -20,3 +20,21 @@ test('出生地未知必须报风险，不能让「不在分歧区」的绿灯�
   assert.deepEqual(kinds({ ...unknown, cityKnown: true }), [], '这个盘在出生地已知时本来就没有风险');
   assert.deepEqual(kinds(unknown), ['city_unknown']);
 });
+
+test('节气当天报 jie_qi_day，24 项都算，按北京时日期判', () => {
+  // 2026-09-07 22:41 白露（节）；2026-09-23 秋分（气）也要报
+  const bailu = kinds({ year: 2026, month: 9, day: 7, hour: 9, minute: 0, applyTrueSolar: false });
+  assert.ok(bailu.includes('jie_qi_day'));
+  assert.ok(!bailu.includes('jie_qi'), '上午九点距交节 13 小时，不该同时报「不足六小时」');
+  assert.ok(kinds({ year: 2026, month: 9, day: 23, hour: 9, minute: 0, applyTrueSolar: false }).includes('jie_qi_day'));
+  assert.ok(!kinds({ year: 2026, month: 9, day: 8, hour: 0, minute: 30, applyTrueSolar: false }).includes('jie_qi_day'));
+
+  // 兰州 9 月 8 日 00:30 的真太阳时落在 9 月 7 日，但「当天」按北京时判，不算节气日
+  assert.ok(!kinds({ year: 2026, month: 9, day: 8, hour: 0, minute: 30, longitude: 103.825 }).includes('jie_qi_day'));
+
+  const risk = computeChart({ year: 2026, month: 9, day: 7, hour: 23, minute: 30, applyTrueSolar: false })
+    .charts[0].risks.find((r) => r.kind === 'jie_qi_day');
+  assert.equal(risk.level, 'info');
+  assert.equal(risk.term.name, '白露');
+  assert.deepEqual(risk.term.at, { year: 2026, month: 9, day: 7, hour: 22, minute: 41 });
+});

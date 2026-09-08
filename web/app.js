@@ -71,9 +71,18 @@ const state = {
     cityKnown: true,   // false 时经度是兜底的 120，引擎会单独报一条风险
     applyDst: false,        // 默认关，由老师按需开
     applyTrueSolar: false,  // 默认关；开启后兰州这类西部盘会跨时辰
-    sect: 1,                // 流派1: 子初换日; 2: 早晚子时
+    sect: 1,                // 本盘实际生效的子时流派：1 子初换日 / 2 早晚子时。由 runCompute 按下面两层定
     timeFold: 'unknown',
   },
+  // 子时流派分两层。老师的口径是「出生日为 24 节气当天，默认按早晚子时」，
+  // 这个「默认」是每盘的自动默认，不能吞掉老师手动切过的开关：
+  //   sectPreference：老师手动选的、持久化的偏好（原来的 saved.sect）
+  //   sectOverride：老师在**本盘**上手动切过的值；null 表示没动过，节气日自动取 2
+  // 换盘（重新录入 / 载入命例 / 清空）时 override 清空，再按规则判一次。
+  sectPreference: 1,
+  sectOverride: null,
+  // 本盘的子时流派是节气日规则自动切成早晚子时的（风险条据此改文案）
+  sectAutoDefaulted: false,
   // 首屏那个内置样盘还挂着没被顶掉。为真时界面上要标「示例」，别让老师误当成真数据。
   showingSample: true,
   // 引擎计算输出结果
@@ -976,10 +985,10 @@ export function parseBatchCases(text) {
 
 /** 执行排盘并更新当前状态 */
 export function runCompute() {
-  const { year, month, day, hour, minute, longitude, applyDst, applyTrueSolar, sect, timeFold, gender, cityKnown } = state.input;
+  const { year, month, day, hour, minute, longitude, applyDst, applyTrueSolar, timeFold, gender, cityKnown } = state.input;
 
   try {
-    const result = computeChart({
+    const compute = (sect) => computeChart({
       year: Number(year),
       month: Number(month),
       day: Number(day),
@@ -993,6 +1002,18 @@ export function runCompute() {
       gender,
       cityKnown: cityKnown !== false,
     });
+
+    state.input.sect = state.sectOverride ?? state.sectPreference;
+    state.sectAutoDefaulted = false;
+    let result = compute(state.input.sect);
+    // 节气日规则：老师没在本盘手动切过、偏好又是子初换日时，默认改按早晚子时重排一次。
+    // 节气日只看北京时日期，与流派无关，所以第二次算出来的 risks 仍含这一条。
+    const isJieQiDay = result.charts[0].risks.some((r) => r.kind === RISK_KIND.JIE_QI_DAY);
+    if (isJieQiDay && state.sectOverride === null && state.input.sect !== 2) {
+      state.input.sect = 2;
+      state.sectAutoDefaulted = true;
+      result = compute(2);
+    }
 
     state.currentResult = result;
     if (state.activeChartIndex >= result.charts.length) {
@@ -1107,16 +1128,26 @@ function renderRisks() {
     const badge = r.kind === RISK_KIND.CITY_UNKNOWN
       ? '出生地缺失'
       : (r.level === RISK_LEVEL.WARN ? '重点分歧' : '需留心');
+    const message = r.kind === RISK_KIND.JIE_QI_DAY ? r.message + jieQiDaySectNote() : r.message;
     html += `
       <li class="risk-item ${levelClass}">
         <span class="risk-badge">${badge}</span>
         <span class="risk-affects">[${affectsText}]</span>
-        <span class="risk-message">${escapeHtml(r.message)}</span>
+        <span class="risk-message">${escapeHtml(message)}</span>
       </li>
     `;
   }
   html += `</ul>`;
   riskBoxEl.innerHTML = html;
+}
+
+/** 节气日那条提醒的后半句：说清本盘的子时流派是怎么定下来的 */
+function jieQiDaySectNote() {
+  if (state.sectAutoDefaulted) return '已默认按早晚子时排盘；如您师承子初换日，可在下方工具栏切回。';
+  if (state.sectOverride !== null) {
+    return state.sectOverride === 2 ? '本盘按您手动选的早晚子时排。' : '本盘按您手动切回的子初换日排。';
+  }
+  return '本盘按您的偏好早晚子时排。';
 }
 
 /**
@@ -2095,6 +2126,7 @@ export function apply12DigitInput() {
   if (genderEl) state.input.gender = genderEl.value;
 
   comparePendingSide = null;   // 换了盘，对照页上一次的选择作废
+  resetSectOverride();
 
   // 先落命例再排盘：老师从这条路径录入的盘也要能同步上去，否则裁定收上来无从复现
   upsertCaseFromInput();
@@ -2233,6 +2265,7 @@ export function setLongitude(value) {
 export function clearQuickInput() {
   state.showingSample = false;
   state.activeCaseIndex = -1;
+  resetSectOverride();
   Object.assign(state.input, {
     name: '',
     cityName: '',
@@ -2393,6 +2426,7 @@ export function selectBatchCase(index) {
 function applyCaseToInput(c, index) {
   state.showingSample = false;
   state.activeCaseIndex = index;
+  resetSectOverride();
   state.input.name = c.name;
   state.input.gender = c.gender;
   state.input.cityName = c.cityName;
@@ -2687,8 +2721,16 @@ function escapeHtml(str) {
 
 /** 改开关的唯一入口：写进 state、记住偏好、重排。工具栏与对照页的一键选边都走这里。 */
 function setSwitches(patch) {
-  Object.assign(state.input, patch);
-  persist(SWITCHES_KEY, JSON.stringify(currentSwitches()), '保存开关偏好失败，下次打开会回到全关');
+  const { sect, ...rest } = patch;
+  Object.assign(state.input, rest);
+  if (sect !== undefined) {
+    // 手动切子时流派：既是本盘的定论，也更新长期偏好（与原先行为一致）
+    state.sectPreference = Number(sect);
+    state.sectOverride = Number(sect);
+  }
+  // 存的是偏好，不是本盘生效值——节气日自动切成的早晚子时不能变成老师的长期偏好
+  persist(SWITCHES_KEY, JSON.stringify({ ...currentSwitches(), sect: state.sectPreference }),
+    '保存开关偏好失败，下次打开会回到全关');
   runCompute();   // renderToolbarAndAudit 会把工具栏控件刷成 state 的值
 }
 
@@ -2699,10 +2741,16 @@ function loadSwitches() {
     if (!saved || typeof saved !== 'object') return;
     state.input.applyTrueSolar = Boolean(saved.applyTrueSolar);
     state.input.applyDst = Boolean(saved.applyDst);
-    state.input.sect = Number(saved.sect) === 2 ? 2 : 1;
+    state.sectPreference = Number(saved.sect) === 2 ? 2 : 1;
+    state.input.sect = state.sectPreference;
   } catch (e) {
     console.error('读取开关偏好失败，按默认全关:', e);
   }
+}
+
+/** 换了盘：本盘上的手动子时选择作废，下一盘重新按偏好与节气日规则定 */
+function resetSectOverride() {
+  state.sectOverride = null;
 }
 
 export function syncSolar(checked) {

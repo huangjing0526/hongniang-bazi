@@ -17,6 +17,7 @@ const FILES = [
   ['web/app.js', 'app.js'],
   ['web/lunar-esm.js', 'lunar-esm.js'],
   // 历法引擎：页面用裸模块路径 import，目标路径必须与本机开发时一致，否则 importmap 失效
+  ['engine/src/calendar.js', 'engine/src/calendar.js'],
   ['engine/src/chart.js', 'engine/src/chart.js'],
   ['engine/src/city.js', 'engine/src/city.js'],
   ['engine/src/contract.js', 'engine/src/contract.js'],
