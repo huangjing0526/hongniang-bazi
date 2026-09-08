@@ -2052,11 +2052,17 @@ function getActiveChart() {
 
 /** 切换 Tab */
 export function switchTab(tabId) {
-  document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.classList.remove('active');
+    tab.setAttribute('aria-selected', 'false');
+  });
   document.querySelectorAll('.tab-pane').forEach((p) => p.classList.remove('active'));
 
   const tabBtn = document.getElementById(`tab-btn-${tabId}`);
-  if (tabBtn) tabBtn.classList.add('active');
+  if (tabBtn) {
+    tabBtn.classList.add('active');
+    tabBtn.setAttribute('aria-selected', 'true');
+  }
 
   const pane = document.getElementById(`tab-${tabId}`);
   if (pane) pane.classList.add('active');

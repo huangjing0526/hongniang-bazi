@@ -38,7 +38,8 @@ let getActiveChart = null;
 let switchToTab = null;
 let dateTimePicker = null;
 let regionPicker = null;
-let fromChart = false;
+let comparisonMatchesChart = false;
+let openedFromChart = false;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -56,8 +57,28 @@ function fieldsFromSeconds(seconds) {
 
 function markEdited(changes) {
   Object.assign(almanacState, changes);
-  fromChart = false;
+  comparisonMatchesChart = false;
   renderAlmanac();
+}
+
+function setCalendarDate(year, month, day) {
+  Object.assign(almanacState, { year, month, day });
+  comparisonMatchesChart = false;
+  dateTimePicker?.setValue(almanacState);
+  renderAlmanac();
+}
+
+function shiftMonth(offset) {
+  const target = new Date(Date.UTC(almanacState.year, almanacState.month - 1 + offset, 1));
+  const year = target.getUTCFullYear();
+  const month = target.getUTCMonth() + 1;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  setCalendarDate(year, month, Math.min(almanacState.day, lastDay));
+}
+
+function selectToday() {
+  const today = new Date();
+  setCalendarDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
 }
 
 function computeAlmanacChart() {
@@ -76,26 +97,50 @@ function lunarLabel(year, month, day) {
   return `${lunar.getMonth() < 0 ? '闰' : ''}${lunar.getMonthInChinese()}月`;
 }
 
-function renderMonth(chart) {
+function renderMonth() {
   const { year, month, day } = almanacState;
   const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
   const termsByDay = new Map();
   for (const term of jieQiTableOf(year).filter((item) => item.at.month === month)) {
     termsByDay.set(term.at.day, `${term.name} ${fmtTerm(term).slice(11)}`);
   }
+  const cells = Array.from({ length: firstWeekday }, () => '<div class="alm-day alm-day-empty" aria-hidden="true"></div>');
   const rows = [];
   for (let currentDay = 1; currentDay <= days; currentDay += 1) {
+    const lunar = lunarLabel(year, month, currentDay);
+    const ganZhi = dayGanZhiByJdn(year, month, currentDay);
+    const term = termsByDay.get(currentDay) ?? '';
+    cells.push(`<button type="button" class="alm-day ${currentDay === day ? 'alm-day-selected' : ''}"
+      data-almanac-day="${currentDay}" aria-pressed="${currentDay === day}" aria-label="${month} 月 ${currentDay} 日，农历${escapeHtml(lunar)}，${ganZhi}${term ? `，${escapeHtml(term)}` : ''}">
+      <span class="alm-day-number">${currentDay}</span>
+      <span class="alm-day-lunar ${term ? 'alm-day-term' : ''}">${escapeHtml(term ? term.split(' ')[0] : lunar)}</span>
+      <span class="alm-day-ganzhi">${ganZhi}</span>
+    </button>`);
     rows.push(`<tr class="${currentDay === day ? 'alm-selected-row' : ''}">
       <td>${currentDay} 日</td>
       <td>星期${WEEKDAYS[new Date(Date.UTC(year, month - 1, currentDay)).getUTCDay()]}</td>
-      <td>${escapeHtml(lunarLabel(year, month, currentDay))}</td>
-      <td class="alm-gan-zhi">${dayGanZhiByJdn(year, month, currentDay)}</td>
-      <td>${escapeHtml(termsByDay.get(currentDay) ?? '')}</td>
+      <td>${escapeHtml(lunar)}</td>
+      <td class="alm-gan-zhi">${ganZhi}</td>
+      <td>${escapeHtml(term)}</td>
     </tr>`);
   }
+  while (cells.length % 7) cells.push('<div class="alm-day alm-day-empty" aria-hidden="true"></div>');
+  const previousDisabled = year === 1900 && month === 1 ? ' disabled' : '';
+  const nextDisabled = year === 2100 && month === 12 ? ' disabled' : '';
   return `<div class="card-box alm-section">
-    <div class="card-title"><span>${year} 年 ${month} 月</span><span class="alm-card-note">所选日已标朱砂</span></div>
-    <div class="alm-table-scroll"><table class="alm-table"><thead><tr><th>公历日</th><th>星期</th><th>农历</th><th>日干支</th><th>节气</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
+    <div class="alm-month-nav">
+      <button type="button" class="alm-nav-button" data-almanac-action="previous-month" aria-label="上个月"${previousDisabled}>‹ 上月</button>
+      <div class="alm-month-title">${year} 年 ${month} 月</div>
+      <div class="alm-month-actions"><button type="button" class="alm-today-button" data-almanac-action="today">今天</button><button type="button" class="alm-nav-button" data-almanac-action="next-month" aria-label="下个月"${nextDisabled}>下月 ›</button></div>
+    </div>
+    <div class="alm-weekdays" aria-hidden="true">${WEEKDAYS.map((value) => `<span>${value}</span>`).join('')}</div>
+    <div class="alm-calendar-grid">${cells.join('')}</div>
+    <details class="alm-details alm-month-details">
+      <summary>查看整月逐日明细</summary>
+      <div class="alm-scroll-hint">左右滑动查看完整表格</div>
+      <div class="alm-table-scroll"><table class="alm-table"><thead><tr><th>公历日</th><th>星期</th><th>农历</th><th>日干支</th><th>节气</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
+    </details>
   </div>`;
 }
 
@@ -189,15 +234,19 @@ function renderHours(chart) {
     </tr>`;
   });
   const birth = `钟表时 ${pad(almanacState.hour)}:${pad(almanacState.minute)} → 真太阳时 ${pad(trueSolar.hour)}:${pad(trueSolar.minute)}`;
+  const open = typeof window === 'undefined' || !window.matchMedia('(max-width: 520px)').matches ? ' open' : '';
   return `<div class="card-box alm-section">
-    <div class="card-title"><span>本日十二时辰</span><span class="alm-card-note">出生时辰已标朱砂（${birth}）</span></div>
-    <div class="card-sub">本地真太阳时相对北京时间偏移 ${offset >= 0 ? '+' : ''}${offset.toFixed(1)} 分钟；下表第三列为反推的北京时间。</div>
-    <div class="alm-table-scroll"><table class="alm-table alm-hours-table"><thead><tr><th>时辰</th><th>北京时区间</th><th>本地真太阳时对应北京时</th><th>时柱</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
+    <details class="alm-details alm-hours-details"${open}>
+      <summary><span>本日十二时辰</span><span class="alm-card-note">${birth}</span></summary>
+      <div class="card-sub">本地真太阳时相对北京时间偏移 ${offset >= 0 ? '+' : ''}${offset.toFixed(1)} 分钟；据此判断出生时辰，右列给出相应时柱。</div>
+      <div class="alm-scroll-hint">左右滑动查看完整表格</div>
+      <div class="alm-table-scroll"><table class="alm-table alm-hours-table"><thead><tr><th>传统时辰</th><th>真太阳时区间</th><th>对应钟表时间</th><th>时柱</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
+    </details>
   </div>`;
 }
 
 function renderComparison() {
-  if (!fromChart) return '';
+  if (!comparisonMatchesChart) return '';
   const chart = getActiveChart();
   if (!chart) return '';
   const ours = almanacPillars({
@@ -234,7 +283,10 @@ export function renderAlmanac() {
   if (!content || !appState) return;
   try {
     const chart = computeAlmanacChart();
-    content.innerHTML = renderMonth(chart) + renderTerms(chart) + renderHours(chart) + renderComparison() + renderAccuracy();
+    const returnAction = openedFromChart
+      ? '<div class="alm-return-row"><button type="button" class="alm-return-button" data-almanac-action="return-chart">← 返回命盘</button></div>'
+      : '';
+    content.innerHTML = returnAction + renderComparison() + renderMonth() + renderTerms(chart) + renderHours(chart) + renderAccuracy();
   } catch (error) {
     console.error('渲染万年历失败:', error);
     content.innerHTML = `<div class="risk-box risk-has-warn alm-render-error">万年历暂时无法生成：${escapeHtml(error.message)}</div>`;
@@ -252,7 +304,8 @@ export function openAlmanacFromChart() {
     longitude: appState.input.longitude,
     sect: appState.input.sect,
   });
-  fromChart = true;
+  comparisonMatchesChart = true;
+  openedFromChart = true;
   dateTimePicker?.setValue(almanacState);
   regionPicker?.setValue(almanacState.cityName);
   const longitudeInput = document.getElementById('almanac-longitude');
@@ -294,6 +347,18 @@ export function mountAlmanac(options) {
   });
   document.querySelectorAll('input[name="almanac-sect"]').forEach((radio) => {
     radio.addEventListener('change', () => markEdited({ sect: Number(radio.value) }));
+  });
+  document.getElementById('almanac-content')?.addEventListener('click', (event) => {
+    const dayButton = event.target.closest('[data-almanac-day]');
+    if (dayButton) {
+      setCalendarDate(almanacState.year, almanacState.month, Number(dayButton.dataset.almanacDay));
+      return;
+    }
+    const action = event.target.closest('[data-almanac-action]')?.dataset.almanacAction;
+    if (action === 'previous-month') shiftMonth(-1);
+    else if (action === 'next-month') shiftMonth(1);
+    else if (action === 'today') selectToday();
+    else if (action === 'return-chart') switchToTab('chart');
   });
   renderAlmanac();
   return { regionPicker };
