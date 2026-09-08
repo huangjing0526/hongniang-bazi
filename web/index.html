@@ -434,6 +434,12 @@ body::before {
 .risk-message {
   color: var(--ink);
 }
+.risk-almanac-link {
+  color: var(--cinnabar);
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}
 
 /* 夏令时双盘提醒 */
 .dual-chart-alert {
@@ -509,6 +515,48 @@ body::before {
   font-size: 11px;
   padding: 3px 7px;
   cursor: pointer;
+}
+
+/* 万年历沿用卷宗卡片，只补页面结构与窄屏表格滚动。 */
+.alm-page { padding: 16px; }
+.alm-controls { display: grid; gap: 12px; }
+.alm-control-row { min-width: 0; }
+.alm-control-row .radio-group { margin-top: 3px; }
+.alm-longitude { max-width: 180px; }
+.alm-section { padding: 0; overflow: hidden; }
+.alm-section > .card-title,
+.alm-section > .card-sub,
+.alm-source > p { margin-left: 14px; margin-right: 14px; }
+.alm-section > .card-title { padding-top: 14px; }
+.alm-card-note { color: var(--cinnabar); font: 400 11px var(--font-sans); }
+.alm-table-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.alm-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 12px; }
+.alm-hours-table { min-width: 680px; }
+.alm-table th,
+.alm-table td { padding: 8px 10px; border-top: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.alm-table th { background: var(--paper-2); color: var(--ink-3); font-weight: 500; }
+.alm-selected-row { background: var(--cinnabar-soft); box-shadow: inset 3px 0 var(--cinnabar); }
+.alm-gan-zhi { font-family: var(--font-serif); font-weight: 700; }
+.alm-term-note,
+.alm-hour-note { margin-top: 3px; color: var(--ink-3); font-family: var(--font-sans); font-size: 11px; font-weight: 400; }
+.alm-distance { color: var(--cinnabar); }
+.alm-exception { display: inline-block; margin-left: 5px; padding: 1px 5px; color: var(--cinnabar); background: var(--cinnabar-soft); font-size: 11px; }
+.alm-inline-notice,
+.alm-accuracy-warning,
+.alm-render-error { margin: 10px 14px 14px; border-bottom: 0; }
+.alm-comparison-grid { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); }
+.alm-comparison-cell { min-width: 0; padding: 12px 10px; border-right: 1px solid var(--line); font-size: 11px; line-height: 1.55; }
+.alm-comparison-cell:last-child { border-right: 0; }
+.alm-comparison-name { color: var(--ink-5); }
+.alm-comparison-values { font-family: var(--font-serif); font-size: 17px; font-weight: 700; }
+.alm-same { color: var(--wood); }
+.alm-different { color: var(--cinnabar); background: var(--cinnabar-soft); }
+.alm-source { padding-bottom: 8px; font-size: 12px; line-height: 1.8; color: var(--ink-3); }
+@media (max-width: 520px) {
+  .alm-page { padding: 10px; }
+  .alm-comparison-grid { grid-template-columns: repeat(2, 1fr); }
+  .alm-comparison-cell:nth-child(2) { border-right: 0; }
+  .alm-comparison-cell:nth-child(n+3) { border-top: 1px solid var(--line); }
 }
 
 .audit-box {
@@ -1444,6 +1492,7 @@ body.engine-loading #engine-loading { display: flex; }
     <div class="tab" id="tab-btn-quick" onclick="window.app.switchTab('quick')">快速录入</div>
     <div class="tab active" id="tab-btn-chart" onclick="window.app.switchTab('chart')">基本排盘</div>
     <div class="tab" id="tab-btn-compare" onclick="window.app.switchTab('compare')">口径对照</div>
+    <div class="tab" id="tab-btn-almanac" onclick="window.app.switchTab('almanac')">万年历</div>
     <div class="tab" id="tab-btn-verdicts" onclick="window.app.switchTab('verdicts')">老师裁定 (<span id="verdict-count-badge">0</span>)</div>
   </div>
 </header>
@@ -1576,6 +1625,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
     <label><input type="radio" name="toolbar-sect" value="2" onchange="window.app.syncSect(2)"> 早晚子时</label>
     <span id="toolbar-status-text">未交界</span>
     <button id="audit-toggle-btn" style="white-space:nowrap" onclick="window.app.toggleAudit()">朱批过程 ▾</button>
+    <button style="white-space:nowrap" onclick="window.app.openAlmanacFromChart()">对照万年历 →</button>
   </div>
 
   <!-- 朱批计算过程 -->
@@ -1716,6 +1766,38 @@ Alanzhou 199608101203 兰州 坤造 出生证
       <button class="secondary-btn" onclick="window.app.clearAllVerdicts()">清空记录</button>
     </div>
     <div id="verdicts-list-container"></div>
+  </div>
+</div>
+
+<!-- ===================================================================== -->
+<!-- TAB 5: 万年历核盘页 -->
+<!-- ===================================================================== -->
+<div id="tab-almanac" class="tab-pane">
+  <div class="alm-page">
+    <div class="card-box alm-controls">
+      <div class="card-title">万年历核盘</div>
+      <div class="card-sub">选时间与出生地，查看当月历页、交节时刻与本地十二时辰。</div>
+      <div class="alm-control-row">
+        <label class="input-label">时间（年 / 月 / 日 / 时 / 分）</label>
+        <div id="almanac-dtp"></div>
+      </div>
+      <div class="alm-control-row">
+        <label class="input-label">出生地点</label>
+        <div id="almanac-region"></div>
+      </div>
+      <div class="alm-control-row">
+        <label class="input-label" for="almanac-longitude">经度微调 (°E)</label>
+        <input id="almanac-longitude" class="text-input alm-longitude" type="number" step="0.001" value="103.825">
+      </div>
+      <div class="alm-control-row">
+        <label class="input-label">子时流派</label>
+        <div class="radio-group">
+          <label><input type="radio" name="almanac-sect" value="1" checked> 子初换日</label>
+          <label><input type="radio" name="almanac-sect" value="2"> 早晚子时</label>
+        </div>
+      </div>
+    </div>
+    <div id="almanac-content"></div>
   </div>
 </div>
 

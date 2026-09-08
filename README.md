@@ -12,6 +12,7 @@ node web/server.js   # → http://localhost:5173
 | [docs/2026-09-03-红娘八字排盘-调研与MVP方案.md](docs/2026-09-03-红娘八字排盘-调研与MVP方案.md) | 调研、口径、神煞表、朱砂卷宗、实现路径 |
 | [docs/2026-09-03-任务计划-B档第2步.md](docs/2026-09-03-任务计划-B档第2步.md) | 三轨并行分工、防撞规则、集成验收记录 |
 | [web/](web/README.md) | 朱砂卷宗排盘页（快速录入 / 分歧风险条 / 细盘 / 老师裁定 / 对照） |
+| [web/calendar-page.js](web/calendar-page.js) | 万年历核盘页（月历、交节时刻、十二时辰与四柱自动对照） |
 | [prototype/index.html](prototype/index.html) | UI 设计稿（可点击，朱砂卷宗） |
 | [prototype/refs/wenzhen-chart.jpg](prototype/refs/wenzhen-chart.jpg) | 问真细盘截图（信息架构参考） |
 | [engine/](engine/README.md) | 历法引擎：夏令时 / 真太阳时 / 子时两派 + 神煞 + 风险判据 + 审计。23 条回归 |

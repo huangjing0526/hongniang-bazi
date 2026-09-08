@@ -15,6 +15,7 @@ const DIST = path.join(ROOT, 'dist');
 const FILES = [
   ['web/index.html', 'index.html'],
   ['web/app.js', 'app.js'],
+  ['web/calendar-page.js', 'calendar-page.js'],
   ['web/lunar-esm.js', 'lunar-esm.js'],
   ['web/components/datetime-picker.js', 'components/datetime-picker.js'],
   ['web/components/region-picker.js', 'components/region-picker.js'],

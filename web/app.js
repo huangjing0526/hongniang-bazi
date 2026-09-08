@@ -6,6 +6,7 @@ import { computeChart } from '../engine/src/chart.js';
 import { fmt } from '../engine/src/solartime.js';
 import { mount as mountDateTimePicker } from './components/datetime-picker.js';
 import { mount as mountRegionPicker } from './components/region-picker.js';
+import { mountAlmanac, openAlmanacFromChart, renderAlmanac } from './calendar-page.js';
 import {
   PILLAR_KEYS,
   DETAIL_ROWS,
@@ -56,6 +57,13 @@ const PILLAR_NAMES = {
   day: '日柱',
   time: '时柱',
 };
+
+const ALMANAC_RISK_KINDS = new Set([
+  RISK_KIND.JIE_QI_DAY,
+  RISK_KIND.JIE_QI,
+  RISK_KIND.CALENDAR_MISMATCH,
+  RISK_KIND.CALENDAR_UNVERIFIED,
+]);
 
 // 全局状态管理
 const state = {
@@ -168,11 +176,11 @@ async function initCityData() {
 const UNKNOWN_CITY = '未知地（按标准时）';
 
 // 快速录入区的两个通用控件（web/components/）。boot 时挂上；重名确认条上的那个每次渲染重挂。
-const pickers = { dtp: null, region: null, confirmRegion: null };
+const pickers = { dtp: null, region: null, confirmRegion: null, almanacRegion: null };
 
 /** 城市库到了就喂给所有已挂载的出生地控件 */
 function feedRegionPickers() {
-  for (const key of ['region', 'confirmRegion']) {
+  for (const key of ['region', 'confirmRegion', 'almanacRegion']) {
     pickers[key]?.setCities(state.cities, state.lookupCityFn);
   }
 }
@@ -1143,11 +1151,14 @@ function renderRisks() {
       ? '出生地缺失'
       : (r.level === RISK_LEVEL.WARN ? '重点分歧' : '需留心');
     const message = r.kind === RISK_KIND.JIE_QI_DAY ? r.message + jieQiDaySectNote() : r.message;
+    const almanacLink = ALMANAC_RISK_KINDS.has(r.kind)
+      ? ' <a class="risk-almanac-link" href="javascript:void 0" onclick="window.app.openAlmanacFromChart()">查看万年历 →</a>'
+      : '';
     html += `
       <li class="risk-item ${levelClass}">
         <span class="risk-badge">${badge}</span>
         <span class="risk-affects">[${affectsText}]</span>
-        <span class="risk-message">${escapeHtml(message)}</span>
+        <span class="risk-message">${escapeHtml(message)}${almanacLink}</span>
       </li>
     `;
   }
@@ -2058,6 +2069,8 @@ export function switchTab(tabId) {
     renderVerdictsList();
   } else if (tabId === 'compare') {
     renderCompare();
+  } else if (tabId === 'almanac') {
+    renderAlmanac();
   }
 }
 
@@ -2773,6 +2786,7 @@ if (typeof window !== 'undefined') {
       syncSolar,
       syncDst,
       syncSect,
+      openAlmanacFromChart,
       openSyncPanel,
       closeSyncPanel,
       submitRegister,
@@ -2824,6 +2838,8 @@ if (typeof window !== 'undefined') {
         onChange: (entry) => selectCity(entry.name, entry.lng, entry.approx),
       });
     }
+    const almanac = mountAlmanac({ appState: state, getActiveChart, switchTab });
+    pickers.almanacRegion = almanac.regionPicker;
     if (q12 && preview) {
       q12.addEventListener('input', () => {
         const val = q12.value.trim();
@@ -2872,4 +2888,3 @@ if (typeof window !== 'undefined') {
     boot();
   }
 }
-
