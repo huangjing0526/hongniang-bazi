@@ -6,7 +6,7 @@ import { computeChart } from '../engine/src/chart.js';
 import { fmt } from '../engine/src/solartime.js';
 import { mount as mountDateTimePicker } from './components/datetime-picker.js';
 import { mount as mountRegionPicker } from './components/region-picker.js';
-import { mountAlmanac, openAlmanacFromChart, renderAlmanac } from './calendar-page.js';
+import { mountAlmanac, openAlmanacFromChart, renderAlmanac, syncAlmanacFromChart } from './calendar-page.js';
 import {
   PILLAR_KEYS,
   DETAIL_ROWS,
@@ -209,6 +209,12 @@ const SWITCHES_KEY = 'bazi_switches';
 // 与 cloud/src/api.mjs 里 case.id / verdict.chartId 的 maxLength 对齐。
 // 前端超了这个长度，服务端会整批 400——两边任一处要改，另一处必须跟着改。
 const CASE_ID_MAX = 120;
+
+// 表单归属必须独立记录：快速录入会先换 activeCaseIndex，当时 DOM 里仍是上一盘的答案。
+let verdictFormCaseId = null;
+const verdictDrafts = new Map();
+let isSubmittingVerdict = false;
+let shenshaPopTrigger = null;
 
 /**
  * 命例 id。**cases.id 与 verdicts.chart_id 都由这里生成，别处不要另拼一个格式**——
@@ -1042,6 +1048,9 @@ export function runCompute() {
       state.activeChartIndex = 0;
     }
 
+    // 保持万年历时间与当前排盘信息实时同步
+    syncAlmanacFromChart(true);
+
     renderAll();
   } catch (err) {
     console.error('历法引擎计算发生错误:', err);
@@ -1070,8 +1079,9 @@ function renderAll() {
   renderChartTable();
   renderVerdictForm();
   renderCaseNav();
-  // 对照页要多算两张盘。它藏着的时候不算——切过去时 switchTab 会补上。
+  // 对照页与万年历页藏着的时候不算——切过去时 switchTab 会补上；正在看时实时刷新
   if (document.getElementById('tab-compare')?.classList.contains('active')) renderCompare();
+  if (document.getElementById('tab-almanac')?.classList.contains('active')) renderAlmanac();
   updateVerdictBadge();
 }
 
@@ -1414,10 +1424,10 @@ function renderChartTable() {
             const ss = p.shenSha[sIdx];
             const hasConfirm = ss.pendingTeacherConfirm;
             html += `
-              <span class="${hasConfirm ? 'note' : ''}"
+              <button type="button" class="shensha-chip ${hasConfirm ? 'note' : ''}"
                 onclick="window.app.showShenShaSource('${escapeHtml(pKey)}', ${sIdx})">
                 ${escapeHtml(ss.name)}
-              </span>
+              </button>
             `;
           }
         } else {
@@ -1449,6 +1459,21 @@ function renderChartTable() {
 function renderVerdictForm() {
   const formEl = document.getElementById('verdict-form-section');
   if (!formEl) return;
+
+  const nowId = activeCaseId();
+  if (verdictFormCaseId !== null && verdictFormCaseId !== nowId) {
+    const draft = captureVerdictDraft();
+    if (isVerdictDraftEmpty(draft)) verdictDrafts.delete(verdictFormCaseId);
+    else verdictDrafts.set(verdictFormCaseId, draft);
+
+    resetVerdictForm();
+    const savedDraft = verdictDrafts.get(nowId);
+    if (savedDraft) {
+      applyVerdictDraft(savedDraft);
+      showToast('已取回这条盘上次没写完的裁定');
+    }
+  }
+  verdictFormCaseId = nowId;
 
   const chart = getActiveChart();
   if (!chart) return;
@@ -2076,6 +2101,7 @@ export function switchTab(tabId) {
   } else if (tabId === 'compare') {
     renderCompare();
   } else if (tabId === 'almanac') {
+    syncAlmanacFromChart(true);
     renderAlmanac();
   }
 }
@@ -2135,11 +2161,53 @@ export function showShenShaSource(pillarKey, shenShaIndex) {
       <button type="button" class="shensha-pop-dispute" onclick="window.app.disputeShenSha('${escapeHtml(ss.name)}')">
         对这条表源有异议 → 去裁定里写</button>` : ''}
   `);
-  document.getElementById('shensha-pop')?.classList.add('open');
+  shenshaPopTrigger = document.activeElement;
+  const pop = document.getElementById('shensha-pop');
+  pop?.classList.add('open');
+  pop?.querySelector('.shensha-pop-close')?.focus();
 }
 
 export function closeShenShaPop() {
   document.getElementById('shensha-pop')?.classList.remove('open');
+  if (shenshaPopTrigger?.isConnected) shenshaPopTrigger.focus();
+  shenshaPopTrigger = null;
+}
+
+/** 对话框不能让键盘焦点溜到背后的盘面，否则看得见浮层却操作着别处。 */
+export function handleShenShaPopKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeShenShaPop();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+
+  const pop = document.getElementById('shensha-pop');
+  const card = pop?.querySelector('.shensha-pop-card');
+  const focusableSelector = [
+    'button:not([disabled])',
+    '[href]',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(', ');
+  const focusable = [...(card?.querySelectorAll(focusableSelector) ?? [])];
+  if (focusable.length === 0) {
+    event.preventDefault();
+    card?.focus();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 /** 从 12 位快速输入直接排盘 */
@@ -2279,7 +2347,7 @@ export function clearQuickInput() {
 }
 
 /** 批量解析文本 */
-export async function applyBatchInput() {
+async function applyBatchInputAction() {
   const textEl = document.getElementById('batch-textarea');
   if (!textEl) return;
 
@@ -2340,10 +2408,19 @@ export async function applyBatchInput() {
   showToast(`已追加 ${fresh.length} 条命例${skipTip}，列表共 ${state.cases.length} 条`);
 }
 
+export function applyBatchInput(btn) {
+  return withBusy(btn ?? document.getElementById('apply-batch-input-btn'), '解析中…', applyBatchInputAction);
+}
+
 /** 删除批量列表中的单条命例 */
 export function removeBatchCase(index) {
   const removed = state.cases[index];
   if (!removed) return;
+
+  verdictDrafts.delete(removed.id);
+  // 只清表单，不要把 verdictFormCaseId 置 null：换盘存取的判据是它不为 null，
+  // 置了空，下一条命例的草稿就会被跳过一次不回填。
+  if (index === state.activeCaseIndex) resetVerdictForm();
 
   state.cases.splice(index, 1);
   // 只退役命例，不连带删它的裁定：裁定自带 ourGanZhi / options / cityName 快照，
@@ -2365,15 +2442,17 @@ export function clearBatchCases() {
   if (state.cases.length === 0) return;
   if (!confirm('确定清空批量命例列表吗？此操作不可恢复！')) return;
   retire('cases', state.cases.map((c) => c.id));
+  for (const c of state.cases) verdictDrafts.delete(c.id);
   state.cases = [];
   state.activeCaseIndex = -1;
+  resetVerdictForm();
   persistCases();
   renderBatchList();
   showToast('已清空批量命例列表');
 }
 
 /** 载入典型测试样盘库 */
-export async function loadSampleCases() {
+async function loadSampleCasesAction() {
   // 出生地写到区县：只写「兰州」会落成地级市质心，和内置样盘的城关区变成两条 Alanzhou
   const samples = [
     'Alanzhou 199608101203 兰州市城关区 坤造 出生证',
@@ -2386,8 +2465,12 @@ export async function loadSampleCases() {
   const textEl = document.getElementById('batch-textarea');
   if (textEl) {
     textEl.value = samples.join('\n');
-    await applyBatchInput();
+    await applyBatchInputAction();
   }
+}
+
+export function loadSampleCases(btn) {
+  return withBusy(btn ?? document.getElementById('load-sample-cases-btn'), '载入中…', loadSampleCasesAction);
 }
 
 /** 选中并排特定批次命例 */
@@ -2478,17 +2561,34 @@ function showVerdictError(message, rowId) {
   }
 }
 
+/** 按钮跑完之前先禁掉：这些动作都会改本地数据，连点会产生重复记录或相互矛盾的提示。 */
+async function withBusy(btn, label, fn) {
+  if (!btn || btn.disabled) return;
+  const originalText = btn.textContent;
+  const wasDisabled = btn.disabled;
+  btn.disabled = true;
+  btn.textContent = label;
+  try {
+    return await fn(btn);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = wasDisabled;
+  }
+}
+
+const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+
 /** 提交老师裁定（§13.2） */
-export function submitVerdict() {
+async function submitVerdictAction(btn) {
   const chart = getActiveChart();
-  if (!chart) return;
+  if (!chart) return false;
   showVerdictError('');
 
   // 1. 获取时间来源（必填项！）
   const timeSourceEl = document.querySelector('input[name="verdict-time-source"]:checked');
   if (!timeSourceEl) {
     showVerdictError('请选时间来源：出生证 / 家人口述 / 客户自报', 'verdict-row-time-source');
-    return;
+    return false;
   }
   const timeSource = timeSourceEl.value;
 
@@ -2508,18 +2608,18 @@ export function submitVerdict() {
       const zhi = document.getElementById(`verdict-zhi-${k}`)?.value || '';
       if (!gan || !zhi) {
         showVerdictError(`请填${PILLAR_NAMES[k]}您认为正确的干支——只勾「有分歧」我们不知道该改成什么`, `verdict-group-${k}`);
-        return;
+        return false;
       }
       if (!isValidGanZhi(gan, zhi)) {
         showVerdictError(`${PILLAR_NAMES[k]}「${gan}${zhi}」不在六十甲子内（阳干只配阳支、阴干只配阴支），请重选`, `verdict-group-${k}`);
-        return;
+        return false;
       }
       teacherGanZhi[k] = `${gan}${zhi}`;
     }
 
     if (disputedPillars.length === 0) {
       showVerdictError('请勾出有分歧的柱，排得对就勾「与我们一致」', 'verdict-row-pillars');
-      return;
+      return false;
     }
   }
 
@@ -2539,6 +2639,7 @@ export function submitVerdict() {
     .map((el) => el.value);
   const shenshaNote = document.getElementById('verdict-shensha-note')?.value.trim() ?? '';
 
+  const submittedCaseId = activeCaseId();
   recordVerdict({
     disputedPillars,
     teacherGanZhi,
@@ -2554,9 +2655,20 @@ export function submitVerdict() {
   });
 
   // 清空表单
+  verdictDrafts.delete(submittedCaseId);
   resetVerdictForm();
 
   showToast('✅ 已记录这条裁定，可在「老师裁定」里查看与导出');
+  btn.textContent = '✓ 已提交';
+  await wait(1000);
+  return true;
+}
+
+export function submitVerdict(btn) {
+  if (isSubmittingVerdict) return Promise.resolve(false);
+  isSubmittingVerdict = true;
+  return withBusy(btn ?? document.getElementById('submit-verdict-btn'), '提交中…', submitVerdictAction)
+    .finally(() => { isSubmittingVerdict = false; });
 }
 
 /**
@@ -2613,6 +2725,77 @@ function resetVerdictForm() {
   if (schoolSelect) schoolSelect.value = '';
   const schoolCustom = document.getElementById('verdict-school-custom');
   if (schoolCustom) { schoolCustom.value = ''; schoolCustom.style.display = 'none'; }
+}
+
+function captureVerdictDraft() {
+  const pillars = {};
+  const checkedPillars = [];
+  for (const k of PILLAR_KEYS) {
+    const checked = document.getElementById(`verdict-pillar-${k}`)?.checked ?? false;
+    if (checked) checkedPillars.push(k);
+    pillars[k] = {
+      gan: document.getElementById(`verdict-gan-${k}`)?.value ?? '',
+      zhi: document.getElementById(`verdict-zhi-${k}`)?.value ?? '',
+    };
+  }
+  return {
+    consistent: document.getElementById('verdict-consistent')?.checked ?? false,
+    pillars,
+    checkedPillars,
+    timeSource: document.querySelector('input[name="verdict-time-source"]:checked')?.value ?? '',
+    school: document.getElementById('verdict-school-select')?.value ?? '',
+    schoolCustom: document.getElementById('verdict-school-custom')?.value ?? '',
+    reason: document.getElementById('verdict-reason-input')?.value ?? '',
+    shensha: [...document.querySelectorAll('input[name="verdict-shensha"]:checked')].map((el) => el.value),
+    shenshaNote: document.getElementById('verdict-shensha-note')?.value ?? '',
+  };
+}
+
+function isVerdictDraftEmpty(draft) {
+  return !draft.consistent
+    && draft.checkedPillars.length === 0
+    && !draft.timeSource
+    && !draft.school
+    && !draft.schoolCustom.trim()
+    && !draft.reason.trim()
+    && draft.shensha.length === 0
+    && !draft.shenshaNote.trim();
+}
+
+function applyVerdictDraft(draft) {
+  const consistent = document.getElementById('verdict-consistent');
+  if (consistent) consistent.checked = draft.consistent;
+
+  for (const k of PILLAR_KEYS) {
+    const checked = draft.checkedPillars.includes(k);
+    const chk = document.getElementById(`verdict-pillar-${k}`);
+    if (chk) chk.checked = checked;
+    const gan = document.getElementById(`verdict-gan-${k}`);
+    const zhi = document.getElementById(`verdict-zhi-${k}`);
+    if (gan) gan.value = draft.pillars[k]?.gan ?? '';
+    if (zhi) zhi.value = draft.pillars[k]?.zhi ?? '';
+    onDisputedPillarToggle(k, checked);
+  }
+
+  for (const radio of document.querySelectorAll('input[name="verdict-time-source"]')) {
+    radio.checked = radio.value === draft.timeSource;
+  }
+  const school = document.getElementById('verdict-school-select');
+  if (school) school.value = draft.school;
+  const schoolCustom = document.getElementById('verdict-school-custom');
+  if (schoolCustom) {
+    schoolCustom.value = draft.schoolCustom;
+    schoolCustom.style.display = draft.school === 'custom' ? 'block' : 'none';
+  }
+  const reason = document.getElementById('verdict-reason-input');
+  if (reason) reason.value = draft.reason;
+  for (const chk of document.querySelectorAll('input[name="verdict-shensha"]')) {
+    chk.checked = draft.shensha.includes(chk.value);
+  }
+  const shenshaNote = document.getElementById('verdict-shensha-note');
+  if (shenshaNote) shenshaNote.value = draft.shenshaNote;
+  const shenshaDetails = document.getElementById('verdict-shensha-details');
+  if (shenshaDetails) shenshaDetails.open = draft.shensha.length > 0 || Boolean(draft.shenshaNote.trim());
 }
 
 /** 依据流派选了「自定」才露出文本框 */
@@ -2749,6 +2932,38 @@ export function syncSect(sectValue) {
   setSwitches({ sect: Number(sectValue) });
 }
 
+export function castFromAlmanac(target) {
+  if (!target) return;
+  state.input.year = Number(target.year);
+  state.input.month = Number(target.month);
+  state.input.day = Number(target.day);
+  state.input.hour = Number(target.hour);
+  state.input.minute = Number(target.minute);
+  if (target.cityName) state.input.cityName = target.cityName;
+  if (typeof target.longitude === 'number') state.input.longitude = target.longitude;
+  if (typeof target.sect === 'number') state.input.sect = target.sect;
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const q12 = document.getElementById('quick-12-input');
+  if (q12) {
+    q12.value = `${target.year}${pad(target.month)}${pad(target.day)}${pad(target.hour)}${pad(target.minute)}`;
+    const preview = document.getElementById('quick-12-preview');
+    if (preview) {
+      preview.innerText = `✓ 识别为：${target.year}-${pad(target.month)}-${pad(target.day)} ${pad(target.hour)}:${pad(target.minute)}`;
+      preview.className = 'quick-preview valid';
+    }
+  }
+  pickers.dtp?.setValue(state.input);
+  if (state.input.cityName) {
+    pickers.region?.setValue(state.input.cityName);
+  }
+
+  runCompute();
+  renderAll();
+  switchTab('chart');
+  showToast(`已按万年历所选：${target.year}年${target.month}月${target.day}日 ${pad(target.hour)}:${pad(target.minute)} 排盘`);
+}
+
 // ============================================================================
 // 7. 页面启动入口
 // ============================================================================
@@ -2766,6 +2981,7 @@ if (typeof window !== 'undefined') {
       selectDualChart,
       showShenShaSource,
       closeShenShaPop,
+      handleShenShaPopKeydown,
       disputeShenSha,
       apply12DigitInput,
       selectCity,
@@ -2792,6 +3008,8 @@ if (typeof window !== 'undefined') {
       syncSolar,
       syncDst,
       syncSect,
+      castFromAlmanac,
+      syncAlmanacFromChart,
       openAlmanacFromChart,
       openSyncPanel,
       closeSyncPanel,

@@ -76,6 +76,13 @@ function shiftMonth(offset) {
   setCalendarDate(year, month, Math.min(almanacState.day, lastDay));
 }
 
+function shiftYear(offset) {
+  const year = almanacState.year + offset;
+  if (year < 1900 || year > 2100) return;
+  const lastDay = new Date(Date.UTC(year, almanacState.month, 0)).getUTCDate();
+  setCalendarDate(year, almanacState.month, Math.min(almanacState.day, lastDay));
+}
+
 function selectToday() {
   const today = new Date();
   setCalendarDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
@@ -126,13 +133,25 @@ function renderMonth() {
     </tr>`);
   }
   while (cells.length % 7) cells.push('<div class="alm-day alm-day-empty" aria-hidden="true"></div>');
-  const previousDisabled = year === 1900 && month === 1 ? ' disabled' : '';
-  const nextDisabled = year === 2100 && month === 12 ? ' disabled' : '';
+  const prevMonthDisabled = year === 1900 && month === 1 ? ' disabled' : '';
+  const nextMonthDisabled = year === 2100 && month === 12 ? ' disabled' : '';
+  const prevYearDisabled = year <= 1900 ? ' disabled' : '';
+  const nextYearDisabled = year >= 2100 ? ' disabled' : '';
   return `<div class="card-box alm-section">
     <div class="alm-month-nav">
-      <button type="button" class="alm-nav-button" data-almanac-action="previous-month" aria-label="上个月"${previousDisabled}>‹ 上月</button>
-      <div class="alm-month-title">${year} 年 ${month} 月</div>
-      <div class="alm-month-actions"><button type="button" class="alm-today-button" data-almanac-action="today">今天</button><button type="button" class="alm-nav-button" data-almanac-action="next-month" aria-label="下个月"${nextDisabled}>下月 ›</button></div>
+      <div class="alm-nav-left">
+        <button type="button" class="alm-today-button" data-almanac-action="today">今天</button>
+      </div>
+      <div class="alm-month-stepper">
+        <button type="button" class="alm-step-btn alm-btn-year" data-almanac-action="previous-year" title="上一年" aria-label="上一年"${prevYearDisabled}>«</button>
+        <button type="button" class="alm-step-btn alm-btn-month" data-almanac-action="previous-month" title="上一月" aria-label="上一月"${prevMonthDisabled}>‹ 上月</button>
+        <div class="alm-month-title">${year} 年 ${month} 月</div>
+        <button type="button" class="alm-step-btn alm-btn-month" data-almanac-action="next-month" title="下一月" aria-label="下一月"${nextMonthDisabled}>下月 ›</button>
+        <button type="button" class="alm-step-btn alm-btn-year" data-almanac-action="next-year" title="下一年" aria-label="下一年"${nextYearDisabled}>»</button>
+      </div>
+      <div class="alm-nav-right">
+        <span class="alm-nav-hint">点击日历格直接选日</span>
+      </div>
     </div>
     <div class="alm-weekdays" aria-hidden="true">${WEEKDAYS.map((value) => `<span>${value}</span>`).join('')}</div>
     <div class="alm-calendar-grid">${cells.join('')}</div>
@@ -283,9 +302,12 @@ export function renderAlmanac() {
   if (!content || !appState) return;
   try {
     const chart = computeAlmanacChart();
-    const returnAction = openedFromChart
-      ? '<div class="alm-return-row"><button type="button" class="alm-return-button" data-almanac-action="return-chart">← 返回命盘</button></div>'
-      : '';
+    const returnAction = `
+      <div class="alm-return-row">
+        ${openedFromChart ? '<button type="button" class="alm-return-button" data-almanac-action="return-chart">← 返回命盘</button>' : '<span></span>'}
+        <button type="button" class="alm-cast-button" data-almanac-action="cast-chart">以此日期排盘 →</button>
+      </div>
+    `;
     content.innerHTML = returnAction + renderComparison() + renderMonth() + renderTerms(chart) + renderHours(chart) + renderAccuracy();
   } catch (error) {
     console.error('渲染万年历失败:', error);
@@ -293,19 +315,20 @@ export function renderAlmanac() {
   }
 }
 
-export function openAlmanacFromChart() {
+export function syncAlmanacFromChart(fromChart = true) {
+  if (!appState || !appState.input) return;
   Object.assign(almanacState, {
-    year: appState.input.year,
-    month: appState.input.month,
-    day: appState.input.day,
-    hour: appState.input.hour,
-    minute: appState.input.minute,
+    year: Number(appState.input.year),
+    month: Number(appState.input.month),
+    day: Number(appState.input.day),
+    hour: Number(appState.input.hour),
+    minute: Number(appState.input.minute),
     cityName: appState.input.cityName,
-    longitude: appState.input.longitude,
-    sect: appState.input.sect,
+    longitude: Number(appState.input.longitude),
+    sect: Number(appState.input.sect),
   });
   comparisonMatchesChart = true;
-  openedFromChart = true;
+  openedFromChart = Boolean(fromChart);
   dateTimePicker?.setValue(almanacState);
   regionPicker?.setValue(almanacState.cityName);
   const longitudeInput = document.getElementById('almanac-longitude');
@@ -313,6 +336,10 @@ export function openAlmanacFromChart() {
   document.querySelectorAll('input[name="almanac-sect"]').forEach((radio) => {
     radio.checked = Number(radio.value) === almanacState.sect;
   });
+}
+
+export function openAlmanacFromChart() {
+  syncAlmanacFromChart(true);
   switchToTab('almanac');
 }
 
@@ -357,8 +384,15 @@ export function mountAlmanac(options) {
     const action = event.target.closest('[data-almanac-action]')?.dataset.almanacAction;
     if (action === 'previous-month') shiftMonth(-1);
     else if (action === 'next-month') shiftMonth(1);
+    else if (action === 'previous-year') shiftYear(-1);
+    else if (action === 'next-year') shiftYear(1);
     else if (action === 'today') selectToday();
     else if (action === 'return-chart') switchToTab('chart');
+    else if (action === 'cast-chart') {
+      if (typeof window?.app?.castFromAlmanac === 'function') {
+        window.app.castFromAlmanac(almanacState);
+      }
+    }
   });
   renderAlmanac();
   return { regionPicker };
