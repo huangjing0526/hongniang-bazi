@@ -46,7 +46,40 @@ magick compare -metric AE 基线.png /tmp/after/同名.png null:
 ```
 
 输出 `0 (0)` 就是零差异。**这组基线自比过两轮，六张全是 0**，所以「像素级一致」
-是个能达到的标准，不是口号——出现非零差异就是真的改到东西了，别当成噪声放过。
+是个能达到的标准，不是口号。
+
+## ⚠️ 先跑对照组，再下结论（2026-09-10 补）
+
+**基线图会随浏览器版本失效。** 图是用系统 Chrome 截的，Chrome 一更新，字体抗锯齿
+就可能整体漂移一两个色阶——代码一个字没动，比出来也是几百个像素的差异。
+
+2026-09-10 验收字号断点那轮就撞上了：拿改动后的代码比基线，四张「必须 0 差异」的
+图全是 130–147 像素，差点判成回归。用 worktree 把**改动前**的代码单独跑一遍才发现，
+它比出来是同样的 147 / 130 / 142 / 135 ——一模一样，跟改动无关。
+
+所以看到非零差异时，先问一句「未改动的代码比出来是几」：
+
+```bash
+# 在仓库外开一个改动前的 worktree（不碰你工作区里未提交的改动）
+git worktree add /tmp/wt-before <改动前的 commit>
+cp -R engine/node_modules/lunar-javascript /tmp/wt-before/engine/node_modules/   # 构建要用
+cd /tmp/wt-before && node scripts/build.mjs
+DB_PATH=/tmp/before.sqlite PORT=8098 node cloud/server.mjs &
+
+# 同一轮里截两组，比这两组，而不是比昨天的基线
+PLAYWRIGHT_DIR=/tmp/pw node "docs/baselines/2026-09-09-字号断点/capture.mjs" /tmp/control 8098
+PLAYWRIGHT_DIR=/tmp/pw node "docs/baselines/2026-09-09-字号断点/capture.mjs" /tmp/after   8099
+magick compare -metric AE /tmp/control/同名.png /tmp/after/同名.png null:
+
+git worktree remove --force /tmp/wt-before    # 用完删掉
+```
+
+**判据是「同环境下 改前 vs 改后」，仓库里这组基线只是个参照物。**
+两个数一致 = 环境漂移，可以放过；只有改后那组偏离对照组，才是真回归。
+
+顺带一个量级参考：环境漂移长这样——差异全是**孤立的单像素**（连通块 1×1），
+峰值误差约 1 个色阶（`magick compare -metric PAE` 给 257/65535）。真的布局改动
+是成片的，量级在十万以上。用 `-metric PAE` 和连通块分析能一眼分开这两者。
 
 ## 两处被中和掉的东西
 

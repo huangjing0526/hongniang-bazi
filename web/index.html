@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>红娘排盘 · 朱砂卷宗</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -99,7 +99,7 @@ body::before {
   }
 }
 
-@media (min-width: 1080px) {
+@media (min-width: 1024px) {
   .sheet {
     max-width: 1100px;
     margin: 24px auto;
@@ -109,7 +109,7 @@ body::before {
 
   #tab-chart.tab-pane.active {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 390px;
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 390px);
     align-items: start;
     gap: 16px;
     padding: 8px 16px 20px;
@@ -156,7 +156,7 @@ body::before {
   }
 }
 
-@media (min-width: 1080px) and (max-height: 640px) {
+@media (min-width: 1024px) and (max-height: 640px) {
   #tab-chart > .verdict-box {
     position: static;
     max-height: none;
@@ -184,7 +184,7 @@ body::before {
 .title-bar h1 {
   margin: 0;
   font-family: var(--font-serif);
-  font-size: 19px;
+  font-size: 1.1875rem;
   font-weight: 700;
   letter-spacing: .15em;
   background: linear-gradient(135deg, var(--ink) 0%, #3F3730 100%);
@@ -201,7 +201,7 @@ body::before {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
   letter-spacing: .02em;
   color: var(--ink-5);
@@ -256,7 +256,7 @@ body::before {
   flex: 1;
   text-align: center;
   padding: 8px 3px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--ink-5);
   cursor: pointer;
   border-radius: var(--radius-sm);
@@ -284,7 +284,7 @@ body::before {
 #verdict-count-badge {
   display: inline-block;
   min-width: 14px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   border-radius: var(--radius-pill);
   padding: 0 5px;
@@ -314,7 +314,7 @@ body::before {
   border: 1.5px solid rgba(199, 62, 50, 0.28);
   color: var(--cinnabar);
   font-family: var(--font-serif);
-  font-size: 23px;
+  font-size: 1.4375rem;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -329,7 +329,7 @@ body::before {
   align-items: center;
   gap: 8px;
   font-family: var(--font-serif);
-  font-size: 17px;
+  font-size: 1.0625rem;
   font-weight: 700;
   margin-bottom: 4px;
 }
@@ -343,12 +343,12 @@ body::before {
   color: var(--cinnabar);
   background: var(--cinnabar-soft);
   font-family: var(--font-serif);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1.2;
 }
 .date-row {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-3);
   line-height: 1.55;
   word-break: break-all;
@@ -359,7 +359,7 @@ body::before {
   margin: 10px 16px;
   padding: 12px 16px;
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.6;
   border: 1px solid transparent;
   box-shadow: var(--shadow-xs);
@@ -401,7 +401,7 @@ body::before {
   flex-wrap: wrap;
 }
 .risk-badge {
-  font-size: 11px;
+  font-size: 0.6875rem;
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   font-weight: 700;
@@ -428,7 +428,7 @@ body::before {
   background: #FFFDF4;
   border: 1px solid rgba(150, 112, 48, 0.25);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: 0.75rem;
   box-shadow: var(--shadow-xs);
 }
 .dual-title { font-weight: 700; color: var(--seal-gold); margin-bottom: 4px; }
@@ -437,7 +437,7 @@ body::before {
 .dual-tab-btn {
   flex: 1;
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 500;
   font-family: inherit;
   background: #FFFFFF;
@@ -460,7 +460,7 @@ body::before {
   background: linear-gradient(135deg, #DE4D3F 0%, #B5362B 100%);
   color: #fff;
   text-align: center;
-  font-size: 13px;
+  font-size: 0.8125rem;
   letter-spacing: .06em;
   padding: 9px 16px;
   margin: 10px 16px;
@@ -476,7 +476,7 @@ body::before {
   gap: 8px 12px;
   padding: 10px 16px;
   margin: 10px 16px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-3);
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
@@ -509,7 +509,7 @@ body::before {
 .toolbar #toolbar-status-text {
   margin-left: auto;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--ink-5);
 }
 .toolbar input { accent-color: var(--cinnabar); }
@@ -519,7 +519,7 @@ body::before {
   border-radius: var(--radius-sm);
   color: var(--ink-3);
   font-family: inherit;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
   padding: 5px 10px;
   cursor: pointer;
@@ -587,7 +587,7 @@ body::before {
   transition: all 0.15s ease;
   padding: 8px 16px;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 0.75rem;
   box-shadow: var(--shadow-sm);
 }
 .alm-return-button:hover,
@@ -621,7 +621,7 @@ body::before {
   justify-content: flex-end;
 }
 .alm-nav-hint {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-5);
   user-select: none;
 }
@@ -642,13 +642,13 @@ body::before {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 34px;
+  height: 2.125rem;
   padding: 0 12px;
   background: transparent;
   border: none;
   color: var(--ink-2);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -656,7 +656,7 @@ body::before {
 }
 .alm-step-btn.alm-btn-year {
   padding: 0 10px;
-  font-size: 15px;
+  font-size: 0.9375rem;
   color: var(--ink-4);
 }
 .alm-step-btn:not(:disabled):hover {
@@ -684,25 +684,25 @@ body::before {
 .alm-month-title {
   padding: 0 18px;
   font-family: var(--font-serif);
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--ink);
   white-space: nowrap;
   letter-spacing: 0.5px;
   background: #FAF8F5;
-  height: 34px;
+  height: 2.125rem;
   display: flex;
   align-items: center;
   justify-content: center;
   user-select: none;
 }
-.alm-nav-button, .alm-today-button { min-height: 32px; }
+.alm-nav-button, .alm-today-button { min-height: 2rem; }
 .alm-nav-button:disabled { color: var(--line); cursor: not-allowed; background: var(--paper-2); box-shadow: none; }
 .alm-weekdays, .alm-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .alm-weekdays {
   padding: 6px 12px;
   color: var(--ink-5);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-align: center;
 }
@@ -714,7 +714,7 @@ body::before {
 }
 .alm-day {
   min-width: 0;
-  min-height: 68px;
+  min-height: 4.25rem;
   padding: 6px 3px 5px;
   border: 0;
   border-right: 1px solid var(--line-soft);
@@ -729,9 +729,9 @@ body::before {
 .alm-day:nth-child(7n) { border-right: 0; }
 .alm-day-empty { background: var(--paper-2); cursor: default; }
 .alm-day-number, .alm-day-lunar, .alm-day-ganzhi { display: block; }
-.alm-day-number { font-size: 15px; font-weight: 600; line-height: 1.15; }
-.alm-day-lunar { margin-top: 3px; color: var(--ink-5); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.alm-day-ganzhi { margin-top: 2px; color: var(--ink-3); font-family: var(--font-serif); font-size: 10px; }
+.alm-day-number { font-size: 0.9375rem; font-weight: 600; line-height: 1.15; }
+.alm-day-lunar { margin-top: 3px; color: var(--ink-5); font-size: 0.625rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alm-day-ganzhi { margin-top: 2px; color: var(--ink-3); font-family: var(--font-serif); font-size: 0.625rem; }
 .alm-day-term { color: var(--cinnabar); font-weight: 600; }
 .alm-day-selected {
   position: relative;
@@ -746,15 +746,15 @@ body::before {
 .alm-details > summary::-webkit-details-marker { display: none; }
 .alm-details > summary::after { content: "▸"; margin-left: auto; color: var(--cinnabar); }
 .alm-details[open] > summary::after { content: "▾"; }
-.alm-hours-details > summary > span:first-child { font-family: var(--font-serif); font-size: 14px; font-weight: 700; color: var(--ink); }
-.alm-scroll-hint { display: none; padding: 0 14px 7px; color: var(--ink-5); font-size: 10px; text-align: right; }
+.alm-hours-details > summary > span:first-child { font-family: var(--font-serif); font-size: 0.875rem; font-weight: 700; color: var(--ink); }
+.alm-scroll-hint { display: none; padding: 0 14px 7px; color: var(--ink-5); font-size: 0.625rem; text-align: right; }
 .alm-section > .card-title,
 .alm-section > .card-sub,
 .alm-source > p { margin-left: 18px; margin-right: 18px; }
 .alm-section > .card-title { padding-top: 16px; }
 .alm-card-note { color: var(--cinnabar); font: 500 11px var(--font-sans); }
 .alm-table-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.alm-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 12px; }
+.alm-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 0.75rem; }
 .alm-hours-table { min-width: 680px; }
 .alm-table th,
 .alm-table td { padding: 9px 12px; border-top: 1px solid var(--line-soft); text-align: left; white-space: nowrap; }
@@ -762,20 +762,20 @@ body::before {
 .alm-selected-row { background: var(--cinnabar-soft); box-shadow: inset 3px 0 var(--cinnabar); }
 .alm-gan-zhi { font-family: var(--font-serif); font-weight: 700; }
 .alm-term-note,
-.alm-hour-note { margin-top: 3px; color: var(--ink-3); font-family: var(--font-sans); font-size: 11px; font-weight: 400; }
+.alm-hour-note { margin-top: 3px; color: var(--ink-3); font-family: var(--font-sans); font-size: 0.6875rem; font-weight: 400; }
 .alm-distance { color: var(--cinnabar); font-weight: 600; }
-.alm-exception { display: inline-block; margin-left: 5px; padding: 1px 6px; border-radius: var(--radius-xs); color: var(--cinnabar); background: var(--cinnabar-soft); font-size: 11px; font-weight: 500; }
+.alm-exception { display: inline-block; margin-left: 5px; padding: 1px 6px; border-radius: var(--radius-xs); color: var(--cinnabar); background: var(--cinnabar-soft); font-size: 0.6875rem; font-weight: 500; }
 .alm-inline-notice,
 .alm-accuracy-warning,
 .alm-render-error { margin: 10px 18px 16px; border-bottom: 0; }
 .alm-comparison-grid { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); background: #FAF7F2; }
-.alm-comparison-cell { min-width: 0; padding: 14px 12px; border-right: 1px solid var(--line); font-size: 11px; line-height: 1.55; }
+.alm-comparison-cell { min-width: 0; padding: 14px 12px; border-right: 1px solid var(--line); font-size: 0.6875rem; line-height: 1.55; }
 .alm-comparison-cell:last-child { border-right: 0; }
 .alm-comparison-name { color: var(--ink-5); }
-.alm-comparison-values { font-family: var(--font-serif); font-size: 17px; font-weight: 700; }
+.alm-comparison-values { font-family: var(--font-serif); font-size: 1.0625rem; font-weight: 700; }
 .alm-same { color: var(--wood); }
 .alm-different { color: var(--cinnabar); background: var(--cinnabar-soft); }
-.alm-source { padding-bottom: 8px; font-size: 12px; line-height: 1.8; color: var(--ink-3); }
+.alm-source { padding-bottom: 8px; font-size: 0.75rem; line-height: 1.8; color: var(--ink-3); }
 /* ---------------------------------------------------------------------------
  * 手机端与小屏深度适配规范 (Mobile Responsive Adaptation)
  * 覆盖 iPhone SE (375px)、主流手机 (390px~430px)、Android 等移动设备
@@ -801,7 +801,7 @@ body::before {
     padding: 10px 12px 2px;
   }
   .title-bar h1 {
-    font-size: 17px;
+    font-size: 1.0625rem;
     letter-spacing: .08em;
   }
   .sync-bar {
@@ -822,7 +822,7 @@ body::before {
   .tab {
     flex: 0 0 auto;
     padding: 7px 11px;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
 
   /* 命主基本信息条卡片 */
@@ -835,15 +835,15 @@ body::before {
   .avatar {
     width: 44px;
     height: 44px;
-    font-size: 20px;
+    font-size: 1.25rem;
     border-radius: var(--radius-sm);
   }
   .name-row {
-    font-size: 15px;
+    font-size: 0.9375rem;
     margin-bottom: 2px;
   }
   .date-row {
-    font-size: 11px;
+    font-size: 0.6875rem;
     line-height: 1.45;
   }
 
@@ -851,7 +851,7 @@ body::before {
   .risk-box {
     margin: 6px 8px;
     padding: 10px 12px;
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     border-radius: var(--radius-md);
   }
   .risk-item {
@@ -859,13 +859,13 @@ body::before {
     margin-top: 4px;
   }
   .risk-badge {
-    font-size: 10px;
+    font-size: 0.625rem;
     padding: 1px 6px;
   }
   .banner {
     margin: 6px 8px;
     padding: 8px 12px;
-    font-size: 11.5px;
+    font-size: 0.71875rem;
   }
 
   /* 工具栏与开关 */
@@ -874,19 +874,19 @@ body::before {
     padding: 8px 10px;
     gap: 6px 8px;
     border-radius: var(--radius-md);
-    font-size: 11px;
+    font-size: 0.6875rem;
   }
   .toolbar label {
     padding: 3px 6px;
-    font-size: 11px;
+    font-size: 0.6875rem;
   }
   .toolbar button {
     padding: 4px 8px;
-    font-size: 11px;
-    min-height: 28px;
+    font-size: 0.6875rem;
+    min-height: 1.75rem;
   }
   .toolbar #toolbar-status-text {
-    font-size: 10px;
+    font-size: 0.625rem;
     margin-left: 0;
   }
 
@@ -894,24 +894,24 @@ body::before {
   .chart-table {
     margin: 8px 6px 14px;
     border-radius: var(--radius-md);
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .cell {
     padding: 6px 1px;
   }
   .col-title {
     flex: 0.52;
-    font-size: 10px;
+    font-size: 0.625rem;
     padding: 6px 1px;
     letter-spacing: .02em;
   }
   .header-row .cell {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     padding: 7px 1px;
     letter-spacing: .04em;
   }
   .tian-gan, .di-zhi {
-    font-size: 24px;
+    font-size: 1.5rem;
     line-height: 1;
   }
   .wx-dot {
@@ -921,23 +921,23 @@ body::before {
     margin-left: 2px;
   }
   .zang-gan, .fu-xing {
-    font-size: 11px;
+    font-size: 0.6875rem;
     line-height: 1.35;
   }
   .zhuxing-text {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
   }
   .term-text, .nayin-text {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
   }
   .shensha-list {
-    font-size: 10px;
+    font-size: 0.625rem;
     line-height: 1.45;
   }
   .shensha-list .shensha-chip {
     padding: 1px 3.5px;
     margin: 1px 0;
-    font-size: 10px;
+    font-size: 0.625rem;
     border-radius: 3px;
   }
 
@@ -945,7 +945,7 @@ body::before {
   .select-input,
   .text-input,
   .dtp-field .dtp-select {
-    font-size: 16px !important;
+    font-size: 1rem !important;
   }
 
   /* 通用时间控件：小屏一体化卡片式排布 */
@@ -992,7 +992,7 @@ body::before {
     min-width: 0 !important;
   }
   .dtp-unit {
-    font-size: 11px;
+    font-size: 0.6875rem;
   }
 
   /* 出生地控件小屏竖排 */
@@ -1012,7 +1012,7 @@ body::before {
     border-radius: var(--radius-md);
   }
   .card-title {
-    font-size: 15px;
+    font-size: 0.9375rem;
   }
 
   /* 老师裁定卡片 */
@@ -1022,7 +1022,7 @@ body::before {
     border-radius: var(--radius-lg);
   }
   .verdict-header h3 {
-    font-size: 15px;
+    font-size: 0.9375rem;
   }
   .disputed-pillars-grid {
     gap: 6px;
@@ -1059,8 +1059,8 @@ body::before {
   }
   .alm-today-button {
     padding: 4px 8px;
-    font-size: 12px;
-    min-height: 30px;
+    font-size: 0.75rem;
+    min-height: 1.875rem;
   }
   .alm-month-stepper {
     flex: 1;
@@ -1068,35 +1068,35 @@ body::before {
     max-width: calc(100% - 56px);
   }
   .alm-step-btn {
-    height: 30px;
+    height: 1.875rem;
     padding: 0 7px;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .alm-step-btn.alm-btn-year {
     padding: 0 5px;
-    font-size: 13px;
+    font-size: 0.8125rem;
   }
   .alm-month-title {
-    height: 30px;
+    height: 1.875rem;
     padding: 0 8px;
-    font-size: 14px;
+    font-size: 0.875rem;
     font-weight: 600;
   }
   .alm-calendar-grid {
     margin: 0 4px 10px;
   }
   .alm-day {
-    min-height: 54px;
+    min-height: 3.375rem;
     padding: 4px 1px 3px;
   }
   .alm-day-number {
-    font-size: 13.5px;
+    font-size: 0.84375rem;
   }
   .alm-day-lunar {
-    font-size: 9px;
+    font-size: 0.5625rem;
   }
   .alm-day-ganzhi {
-    font-size: 9px;
+    font-size: 0.5625rem;
   }
   .alm-scroll-hint {
     display: block;
@@ -1123,7 +1123,7 @@ body::before {
   }
   .alm-cast-button,
   .alm-return-button {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
     padding: 7px 12px;
   }
 }
@@ -1136,7 +1136,7 @@ body::before {
   border: 1px solid rgba(199, 62, 50, 0.2);
   border-left: 4px solid var(--cinnabar);
   background: #FFF9F7;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.7;
   color: var(--ink-3);
   display: block;
@@ -1146,7 +1146,7 @@ body::before {
 .audit-kicker {
   font-family: var(--font-serif);
   color: var(--cinnabar);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   margin-bottom: 6px;
 }
@@ -1154,7 +1154,7 @@ body::before {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .audit-step-name {
   font-weight: 700;
@@ -1168,13 +1168,13 @@ body::before {
 }
 .audit-step-note {
   color: var(--ink-5);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 /* 细盘表格（圆角卡片化容器） */
 .chart-table {
   background: #FFFFFF;
-  font-size: 13px;
+  font-size: 0.8125rem;
   margin: 12px 16px 20px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
@@ -1202,7 +1202,7 @@ body::before {
 .col-title {
   flex: 0.62;
   color: var(--ink-5);
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: .08em;
   background: #FAF7F2;
   font-weight: 500;
@@ -1213,7 +1213,7 @@ body::before {
 }
 .header-row .cell {
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: .12em;
   padding: 9px 3px;
@@ -1229,7 +1229,7 @@ body::before {
 
 .tian-gan, .di-zhi {
   font-family: var(--font-serif);
-  font-size: 27px;
+  font-size: 1.6875rem;
   font-weight: 700;
   line-height: 1.05;
   position: relative;
@@ -1255,13 +1255,13 @@ body::before {
 .metal { color: var(--metal); }
 .water { color: var(--water); }
 
-.zang-gan, .fu-xing { font-size: 12px; line-height: 1.45; }
-.zhuxing-text { font-size: 13px; font-weight: 500; }
-.term-text { font-size: 12px; color: var(--ink-3); }
-.nayin-text { font-size: 12px; color: var(--ink-3); font-family: var(--font-serif); }
+.zang-gan, .fu-xing { font-size: 0.75rem; line-height: 1.45; }
+.zhuxing-text { font-size: 0.8125rem; font-weight: 500; }
+.term-text { font-size: 0.75rem; color: var(--ink-3); }
+.nayin-text { font-size: 0.75rem; color: var(--ink-3); font-family: var(--font-serif); }
 
 .shensha-list {
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.65;
   color: var(--seal-gold);
 }
@@ -1299,7 +1299,7 @@ body::before {
   margin: 28px auto 40px;
   padding: 0 18px;
   text-align: center;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.9;
   color: var(--ink-5);
 }
@@ -1308,7 +1308,7 @@ body::before {
 .city-precision-hint {
   margin-top: 8px;
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.7;
   color: #7a5a1e;
   background: var(--seal-gold-soft);
@@ -1317,7 +1317,7 @@ body::before {
 }
 .city-opt-item .city-level {
   margin-left: 6px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   padding: 1px 6px;
   border-radius: var(--radius-pill);
   background: rgba(0,0,0,0.04);
@@ -1325,7 +1325,7 @@ body::before {
 }
 .table-footer-notice {
   padding: 12px 16px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--ink-5);
   line-height: 1.6;
   background: #FAF7F2;
@@ -1354,7 +1354,7 @@ body::before {
   border: none;
   border-radius: var(--radius-sm);
   font-family: var(--font-serif);
-  font-size: 14px;
+  font-size: 0.875rem;
   letter-spacing: .08em;
   color: var(--ink-5);
   cursor: pointer;
@@ -1387,7 +1387,7 @@ body::before {
 }
 .card-title {
   font-family: var(--font-serif);
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
   margin-bottom: 8px;
   color: var(--ink);
@@ -1396,7 +1396,7 @@ body::before {
   justify-content: space-between;
 }
 .card-sub {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-5);
   margin-bottom: 14px;
   line-height: 1.6;
@@ -1407,7 +1407,7 @@ body::before {
 }
 .input-label {
   display: block;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-3);
   margin-bottom: 6px;
   font-weight: 600;
@@ -1419,7 +1419,7 @@ body::before {
   border-radius: var(--radius-md);
   background: #FCFBF8;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--ink);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -1443,7 +1443,7 @@ body::before {
 }
 
 .quick-preview {
-  font-size: 12px;
+  font-size: 0.75rem;
   margin-top: 6px;
   display: inline-block;
   padding: 3px 8px;
@@ -1494,14 +1494,14 @@ body::before {
   box-shadow: none !important;
   outline: none !important;
   font-weight: 500;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--ink);
   cursor: pointer;
 }
 .dtp-year .dtp-select { min-width: 4.8em; }
 .dtp-hour .dtp-select { min-width: 4.8em; }
 .dtp-unit {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 500;
   color: var(--ink-5);
   user-select: none;
@@ -1521,7 +1521,7 @@ body::before {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 12px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   padding: 4px 0;
 }
 .radio-group label {
@@ -1570,7 +1570,7 @@ body::before {
 }
 .city-opt-item {
   padding: 9px 12px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1602,7 +1602,7 @@ body::before {
   border: none;
   border-radius: var(--radius-md);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: .08em;
   cursor: pointer;
@@ -1630,7 +1630,7 @@ body::before {
   border-radius: var(--radius-sm);
   color: var(--ink-3);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1647,13 +1647,13 @@ body::before {
 }
 
 .ghost-btn {
-  min-height: 44px;
+  min-height: 2.75rem;
   padding: 10px 18px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: #FFFFFF;
   color: var(--ink-3);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
@@ -1671,7 +1671,7 @@ body::before {
   border: none;
   padding: 0;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-5);
   text-decoration: underline;
   cursor: pointer;
@@ -1682,13 +1682,13 @@ body::before {
 /* 批量粘贴列表 */
 .batch-textarea {
   width: 100%;
-  height: 95px;
+  height: 5.9375rem;
   padding: 10px 14px;
   border: 1.5px solid var(--line);
   border-radius: var(--radius-md);
   background: #FCFBF8;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
   resize: vertical;
   transition: border-color 0.2s ease;
@@ -1704,7 +1704,7 @@ body::before {
   margin-top: 10px;
 }
 .batch-count-bar {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-3);
   margin-bottom: 8px;
 }
@@ -1738,7 +1738,7 @@ body::before {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 .batch-name { font-family: var(--font-serif); }
@@ -1748,7 +1748,7 @@ body::before {
   background: none;
   border: none;
   font-family: inherit;
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1;
   color: var(--ink-5);
   cursor: pointer;
@@ -1760,7 +1760,7 @@ body::before {
   background: var(--cinnabar-soft);
 }
 .batch-badge {
-  font-size: 10px;
+  font-size: 0.625rem;
   background: var(--cinnabar);
   color: #fff;
   padding: 2px 8px;
@@ -1779,12 +1779,12 @@ body::before {
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
   background: #FFFFFF;
-  font-size: 12px;
+  font-size: 0.75rem;
   box-shadow: var(--shadow-xs);
 }
 .case-nav-btn {
   font-family: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 500;
   padding: 5px 12px;
   border: 1px solid var(--line);
@@ -1804,7 +1804,7 @@ body::before {
 .case-nav-pos { color: var(--ink-3); }
 
 .verdict-judged-line {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--wood);
   margin: -4px 0 10px;
   font-weight: 500;
@@ -1813,12 +1813,12 @@ body::before {
 .verdict-judged-line a { color: var(--wood); margin-left: 10px; }
 
 .batch-item-time {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--ink-5);
   margin-top: 3px;
 }
 .batch-item-err {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--cinnabar);
   margin-top: 3px;
 }
@@ -1853,18 +1853,18 @@ body::before {
 .verdict-header h3 {
   margin: 0;
   font-family: var(--font-serif);
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--cinnabar);
 }
 .verdict-sub {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-5);
   margin-bottom: 12px;
   line-height: 1.55;
 }
 .verdict-chart-id {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-3);
   margin-bottom: 12px;
   padding: 8px 12px;
@@ -1879,7 +1879,7 @@ body::before {
 }
 .input-label-hint {
   margin-left: 6px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 400;
   color: var(--ink-5);
 }
@@ -1887,7 +1887,7 @@ body::before {
   padding-top: 12px;
 }
 .field-error-text {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--cinnabar);
   line-height: 1.5;
   margin-bottom: 6px;
@@ -1914,10 +1914,10 @@ body::before {
 }
 .verdict-group-name {
   font-family: var(--font-serif);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
 }
-.verdict-group-count { font-size: 11px; color: var(--ink-5); white-space: nowrap; }
+.verdict-group-count { font-size: 0.6875rem; color: var(--ink-5); white-space: nowrap; }
 
 /* 现代分歧柱可选胶囊 */
 .disputed-pillars-grid {
@@ -1925,7 +1925,7 @@ body::before {
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 12px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .disputed-pillars-grid label {
   cursor: pointer;
@@ -1963,16 +1963,16 @@ body::before {
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .pillar-gz-item .gz-select {
   min-width: 68px;
-  min-height: 36px;
+  min-height: 2.25rem;
   padding: 5px 10px;
   border: 1.5px solid var(--line);
   border-radius: var(--radius-md);
   background: #FCFBF8;
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: var(--ink);
   transition: all 0.2s ease;
@@ -1984,7 +1984,7 @@ body::before {
 }
 .pillar-gz-item .gz-eg {
   color: var(--ink-5);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 /* 对照页一键裁定 */
@@ -1992,13 +1992,13 @@ body::before {
 .compare-pick-row { display: flex; gap: 10px; margin-top: 6px; }
 .compare-pick-btn {
   flex: 1;
-  min-height: 44px;
+  min-height: 2.75rem;
   padding: 10px 12px;
   border: 1.5px solid var(--cinnabar);
   border-radius: var(--radius-md);
   background: #FFFFFF;
   color: var(--cinnabar);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.4;
   cursor: pointer;
@@ -2016,14 +2016,14 @@ body::before {
 .compare-pick-none {
   display: block;
   width: 100%;
-  min-height: 38px;
+  min-height: 2.375rem;
   margin-top: 8px;
   padding: 8px;
   border-radius: var(--radius-md);
   border: 1px dashed var(--line);
   background: transparent;
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -2037,7 +2037,7 @@ body::before {
   border-radius: var(--radius-md);
   background: #F8F5EE;
   border: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .compare-confirm .radio-group { margin: 6px 0 10px; }
 
@@ -2051,7 +2051,7 @@ body::before {
   background: #FFFDF4;
   border: 1px solid rgba(150, 112, 48, 0.25);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.7;
   color: var(--ink-2);
 }
@@ -2065,7 +2065,7 @@ body::before {
   border: 1px solid var(--line);
   background: var(--paper-2);
   color: var(--ink-5);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
 }
 
@@ -2076,7 +2076,7 @@ body::before {
   background: #FFFDF5;
   border: 1px solid rgba(150, 112, 48, 0.25);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.7;
   color: var(--ink-2);
   box-shadow: var(--shadow-xs);
@@ -2086,11 +2086,11 @@ body::before {
   display: inline-block;
   margin: 4px 6px 0 0;
   padding: 5px 12px;
-  min-height: 30px;
+  min-height: 1.875rem;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: #FFFFFF;
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -2120,7 +2120,7 @@ body::before {
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
   margin-bottom: 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-3);
   box-shadow: var(--shadow-xs);
 }
@@ -2135,7 +2135,7 @@ body::before {
   padding: 14px 16px;
   margin-bottom: 10px;
   background: #FFFFFF;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.6;
   box-shadow: var(--shadow-sm);
   transition: all 0.2s ease;
@@ -2156,20 +2156,20 @@ body::before {
   margin-bottom: 6px;
 }
 .verdict-tag {
-  font-size: 11px;
+  font-size: 0.6875rem;
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   font-weight: 700;
 }
 .tag-consistent { background: var(--wood-soft); color: var(--wood); }
 .tag-disputed { background: var(--cinnabar-soft); color: var(--cinnabar); }
-.verdict-time { font-size: 11px; color: var(--ink-5); }
+.verdict-time { font-size: 0.6875rem; color: var(--ink-5); }
 .verdict-del-btn {
   background: none;
   border: none;
   color: var(--ink-5);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 0.6875rem;
   padding: 2px 6px;
   border-radius: var(--radius-xs);
   transition: all 0.15s ease;
@@ -2205,7 +2205,7 @@ body::before {
   background: #FAF7F2;
 }
 .compare-kicker {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-5);
   margin-bottom: 10px;
   font-weight: 700;
@@ -2214,7 +2214,7 @@ body::before {
   display: flex;
   justify-content: space-between;
   padding: 5px 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   border-bottom: 1px dashed rgba(223, 213, 199, 0.6);
 }
 .comp-pillar-item.comp-diff {
@@ -2222,28 +2222,28 @@ body::before {
   border-radius: var(--radius-xs);
   padding: 5px 4px;
 }
-.comp-k { color: var(--ink-5); font-size: 12px; }
-.comp-v { font-family: var(--font-serif); font-size: 16px; font-weight: 700; }
+.comp-k { color: var(--ink-5); font-size: 0.75rem; }
+.comp-v { font-family: var(--font-serif); font-size: 1rem; font-weight: 700; }
 .highlight-cinnabar { color: var(--cinnabar); }
 
 .compare-profile {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--ink-3);
   margin-bottom: 8px;
   line-height: 1.6;
 }
-.compare-profile strong { color: var(--ink); font-family: var(--font-serif); font-size: 15px; }
+.compare-profile strong { color: var(--ink); font-family: var(--font-serif); font-size: 0.9375rem; }
 .compare-section { margin-top: 16px; }
 .compare-cause {
   font-family: var(--font-serif);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   margin-bottom: 8px;
 }
 .compare-cause-diff {
   margin-left: 8px;
   font-family: var(--font-sans);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   color: var(--cinnabar);
   padding: 2px 8px;
@@ -2258,11 +2258,11 @@ body::before {
   border-radius: var(--radius-pill);
   padding: 2px 8px;
   margin-left: 4px;
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .compare-side-note {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--cinnabar);
 }
 .compare-same-list {
@@ -2271,7 +2271,7 @@ body::before {
   border-radius: var(--radius-md);
   border: 1px solid rgba(38, 122, 67, 0.2);
   background: var(--wood-soft);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.8;
   color: var(--wood);
 }
@@ -2306,7 +2306,7 @@ body::before {
   border: 1px solid var(--line);
   border-left: 4px solid var(--seal-gold);
   box-shadow: var(--shadow-lg);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.75;
   animation: scaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -2325,7 +2325,7 @@ body::before {
   right: 12px;
   border: none;
   background: none;
-  font-size: 22px;
+  font-size: 1.375rem;
   line-height: 1;
   color: var(--ink-5);
   cursor: pointer;
@@ -2339,7 +2339,7 @@ body::before {
 }
 .shensha-pop-title {
   font-family: var(--font-serif);
-  font-size: 17px;
+  font-size: 1.0625rem;
   font-weight: 700;
   color: var(--seal-gold);
   margin-bottom: 8px;
@@ -2347,7 +2347,7 @@ body::before {
 }
 .shensha-pop-pending {
   font-family: var(--font-sans);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: var(--cinnabar);
   background: var(--cinnabar-soft);
@@ -2367,7 +2367,7 @@ body::before {
   background: #FFFFFF;
   color: var(--cinnabar);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -2413,9 +2413,9 @@ body::before {
 .sync-panel-card .card-title { display: block; margin-bottom: 6px; }
 .sync-panel-card .card-sub { color: var(--ink-3); line-height: 1.65; }
 .sync-panel-error {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--cinnabar);
-  min-height: 17px;
+  min-height: 1.0625rem;
   margin-top: 6px;
 }
 .sync-panel-actions {
@@ -2425,7 +2425,7 @@ body::before {
 }
 .sync-panel-actions .primary-btn { flex: 1; }
 .sync-panel-link {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--ink-3);
   background: var(--paper-2);
 }
@@ -2451,7 +2451,7 @@ body::before {
   -webkit-backdrop-filter: blur(12px);
   color: #FAF7F2;
   padding: 10px 22px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.5;
   display: none;
@@ -2471,7 +2471,7 @@ body::before {
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.5);
 }
-.empty-sub { font-size: 12px; margin-top: 4px; color: var(--ink-5); }
+.empty-sub { font-size: 0.75rem; margin-top: 4px; color: var(--ink-5); }
 
 /* 引擎就绪遮罩 */
 #engine-loading {
@@ -2488,12 +2488,12 @@ body::before {
 body.engine-loading #engine-loading { display: flex; }
 .loading-title {
   font-family: var(--font-serif);
-  font-size: 18px;
+  font-size: 1.125rem;
   letter-spacing: .18em;
   color: var(--cinnabar);
   font-weight: 700;
 }
-.loading-hint { font-size: 12px; color: var(--ink-5); }
+.loading-hint { font-size: 0.75rem; color: var(--ink-5); }
 
 /* 微动画 */
 @keyframes fadeIn {
@@ -2575,7 +2575,7 @@ body.engine-loading #engine-loading { display: flex; }
     <div class="card-box">
       <div class="card-title">
         <span>录入出生信息</span>
-        <span style="font-size:11px;color:var(--cinnabar);font-weight:normal;">下拉选，或一串数字直接敲</span>
+        <span style="font-size:0.6875rem;color:var(--cinnabar);font-weight:normal;">下拉选，或一串数字直接敲</span>
       </div>
       <div class="card-sub">
         时间用下拉选，或直接键入 12 位纯数字（年4+月2+日2+时2+分2），如 <code>199303270255</code> → 1993-03-27 02:55，两边自动同步。
@@ -2698,7 +2698,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
   <div class="verdict-box" id="verdict-form-section">
     <div class="verdict-header">
       <h3>老师当场裁定</h3>
-      <span style="font-size:11px;color:var(--ink-5);">取代手写笔记 · 当场留痕</span>
+      <span style="font-size:0.6875rem;color:var(--ink-5);">取代手写笔记 · 当场留痕</span>
     </div>
     <div class="verdict-sub">
       若此盘排得不对，或与您师承的排法不同，请标出是哪一柱、正确的应该是什么；若排得对，也请勾选提交，让我们知道哪些盘是准的。
