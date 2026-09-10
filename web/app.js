@@ -11,6 +11,8 @@ import { mountAlmanac, openAlmanacFromChart, renderAlmanac, syncAlmanacFromChart
 import {
   PILLAR_KEYS,
   DETAIL_ROWS,
+  PILLAR_BRANCH_LABEL,
+  PILLAR_PALACE,
   ROW_LABELS,
   TIME_SOURCE,
   RISK_KIND,
@@ -84,6 +86,7 @@ const state = {
     applyTrueSolar: false,  // 默认关；开启后兰州这类西部盘会跨时辰
     sect: 1,                // 本盘实际生效的子时流派：1 子初换日 / 2 早晚子时。由 runCompute 按下面两层定
     timeFold: 'unknown',
+    selfPunish: true,       // 地支自刑：老师模型默认开，部分流派不认；只影响关系标注，不影响四柱
   },
   // 子时流派分两层。老师的口径是「出生日为 24 节气当天，默认按早晚子时」，
   // 这个「默认」是每盘的自动默认，不能吞掉老师手动切过的开关：
@@ -1014,7 +1017,7 @@ export function parseBatchCases(text) {
 
 /** 执行排盘并更新当前状态 */
 export function runCompute() {
-  const { year, month, day, hour, minute, longitude, applyDst, applyTrueSolar, timeFold, gender, cityKnown } = state.input;
+  const { year, month, day, hour, minute, longitude, applyDst, applyTrueSolar, timeFold, gender, cityKnown, selfPunish } = state.input;
 
   try {
     const compute = (sect) => computeChart({
@@ -1030,6 +1033,7 @@ export function runCompute() {
       timeFold,
       gender,
       cityKnown: cityKnown !== false,
+      selfPunish,
     });
 
     state.input.sect = state.sectOverride ?? state.sectPreference;
@@ -1343,6 +1347,9 @@ function renderToolbarAndAudit() {
   const dstCheck = document.getElementById('toolbar-dst');
   if (dstCheck) dstCheck.checked = state.input.applyDst;
 
+  const selfPunishCheck = document.getElementById('toolbar-selfpunish');
+  if (selfPunishCheck) selfPunishCheck.checked = state.input.selfPunish;
+
   // 工具栏的子时单选跟随状态回填
   const sectRadio = document.querySelector(`input[name="toolbar-sect"][value="${state.input.sect}"]`);
   if (sectRadio) sectRadio.checked = true;
@@ -1495,7 +1502,52 @@ function renderChartTable() {
     </div>
   `;
 
+  html += renderRelationsBlock(chart.relations || []);
+
   tableEl.innerHTML = html;
+}
+
+const RELATION_CATEGORY_LABEL = { triple: '三支格局', pair: '两支关系', tag: '墓库' };
+
+/** 一条关系压成一行：地支 + 名目 + 落在哪几柱。长文（出处、距离两套百分比）留给弹层。 */
+function relationChipText(r) {
+  const posText = r.positions.map((k) => PILLAR_BRANCH_LABEL[k][0]).join('·');
+  // 相邻是常态不标；隔位才提醒老师这条有折扣
+  const gap = r.distance?.code && r.distance.code !== 'D10' ? ` · ${r.distance.label}` : '';
+  return `<b>${escapeHtml(r.branches.join(''))}</b> ${escapeHtml(r.label)} <small>${escapeHtml(posText)}${gap}</small>`;
+}
+
+/**
+ * 细盘表格下方的「地支关系」区（老师《地支运算体系 V3.1》A 标注层）。
+ * 只列「有」，不判生效、不判吉凶；每条可点看规则出处。
+ */
+function renderRelationsBlock(relations) {
+  const buckets = { triple: [], pair: [], tag: [] };
+  relations.forEach((r, idx) => buckets[r.category].push({ r, idx }));
+  const groups = Object.entries(buckets).filter(([, items]) => items.length > 0).map(([cat, items]) => ({ cat, items }));
+
+  let body = '';
+  if (groups.length === 0) {
+    body = `<div class="relations-empty">本盘四支之间无合冲刑害破，亦无墓库。</div>`;
+  }
+  for (const g of groups) {
+    body += `<div class="relations-group"><span class="relations-group-label">${RELATION_CATEGORY_LABEL[g.cat]}</span><div class="shensha-list relations-list">`;
+    for (const { r, idx } of g.items) {
+      body += `<button type="button" class="shensha-chip relation-chip ${r.nature} ${r.pendingTeacherConfirm ? 'note' : ''}"
+        onclick="window.app.showRelationSource(${idx})">${relationChipText(r)}</button>`;
+    }
+    body += `</div></div>`;
+  }
+
+  return `
+    <div class="relations-block">
+      <div class="relations-head">地支关系 <span>原局静态 · 只标有无，不判生效与吉凶</span></div>
+      ${body}
+      <div class="table-footer-notice">
+        ℹ️ <strong>关系说明</strong>：据老师《地支运算体系 V3.1》第一至九章冻结；隔一位 / 隔两位的关系仍列出，力量折扣见弹层。自刑与暗合为本模型口径（自刑可在工具栏关闭，暗合标 * 待老师确认）。合解冲、冲破合、化气、封印属生效判定，本期不做。
+      </div>
+    </div>
+  `;
 }
 
 /**
@@ -2255,17 +2307,46 @@ export function showShenShaSource(pillarKey, shenShaIndex) {
 
   const ss = p.shenSha[shenShaIndex];
   // 这段要老师细读，不能用几秒就消失的 toast，开一个他自己关的浮层
-  setHtml('shensha-pop-body', `
+  openShenShaPop(`
     <div class="shensha-pop-title">${escapeHtml(ss.name)}${ss.pendingTeacherConfirm ? ' <span class="shensha-pop-pending">表源待老师确认</span>' : ''}</div>
     <div class="shensha-pop-source">${sourceHtml(ss.source)}</div>
     ${ss.pendingTeacherConfirm ? `
       <button type="button" class="shensha-pop-dispute" onclick="window.app.disputeShenSha('${escapeHtml(ss.name)}')">
         对这条表源有异议 → 去裁定里写</button>` : ''}
   `);
+}
+
+/** 神煞与地支关系共用同一个浮层：记住触发元素以便关闭后把焦点还回去 */
+function openShenShaPop(bodyHtml) {
+  setHtml('shensha-pop-body', bodyHtml);
   shenshaPopTrigger = document.activeElement;
   const pop = document.getElementById('shensha-pop');
   pop?.classList.add('open');
   pop?.querySelector('.shensha-pop-close')?.focus();
+}
+
+/** 展示一条地支关系的规则出处、位置、距离档 */
+export function showRelationSource(index) {
+  const chart = getActiveChart();
+  const r = chart?.relations?.[index];
+  if (!r) return;
+  const where = r.positions.map((k, i) => `${PILLAR_BRANCH_LABEL[k]}（${PILLAR_PALACE[k]}）${r.branches[i]}`).join('、');
+  const rows = [
+    ['代号', `${r.code} · ${r.stars}`],
+    ['位置', where],
+  ];
+  if (r.distance) {
+    const d = r.distance;
+    // 两支带两套百分比；三支只有相连 / 有隔
+    const detail = d.code ? `（${d.code}）· 断具体事件按 ${d.event}%，断人生大局按 ${d.life}%${d.note ? '。' + d.note : ''}` : '';
+    rows.push(['距离', `${d.label}${detail}`]);
+  }
+  if (r.note) rows.push(['备注', r.note]);
+  openShenShaPop(`
+    <div class="shensha-pop-title">${escapeHtml(r.branches.join(''))} ${escapeHtml(r.label)}${r.pendingTeacherConfirm ? ' <span class="shensha-pop-pending">口径待老师确认</span>' : ''}</div>
+    <div class="relation-pop-rows">${rows.map(([k, v]) => `<div><strong>${escapeHtml(k)}</strong>${escapeHtml(v)}</div>`).join('')}</div>
+    <div class="shensha-pop-source">${sourceHtml(r.source)}</div>
+  `);
 }
 
 export function closeShenShaPop() {
@@ -2997,7 +3078,8 @@ function setSwitches(patch) {
     state.sectOverride = Number(sect);
   }
   // 存的是偏好，不是本盘生效值——节气日自动切成的早晚子时不能变成老师的长期偏好
-  persist(SWITCHES_KEY, JSON.stringify({ ...currentSwitches(), sect: state.sectPreference }),
+  // 自刑不改四柱，不进 currentSwitches（那是裁定的口径快照），只跟着偏好一起存
+  persist(SWITCHES_KEY, JSON.stringify({ ...currentSwitches(), sect: state.sectPreference, selfPunish: state.input.selfPunish }),
     '保存开关偏好失败，下次打开会回到全关');
   runCompute();   // renderToolbarAndAudit 会把工具栏控件刷成 state 的值
 }
@@ -3011,6 +3093,7 @@ function loadSwitches() {
     state.input.applyDst = Boolean(saved.applyDst);
     state.sectPreference = Number(saved.sect) === 2 ? 2 : 1;
     state.input.sect = state.sectPreference;
+    if (saved.selfPunish !== undefined) state.input.selfPunish = Boolean(saved.selfPunish);
   } catch (e) {
     console.error('读取开关偏好失败，按默认全关:', e);
   }
@@ -3031,6 +3114,10 @@ export function syncDst(checked) {
 
 export function syncSect(sectValue) {
   setSwitches({ sect: Number(sectValue) });
+}
+
+export function syncSelfPunish(checked) {
+  setSwitches({ selfPunish: Boolean(checked) });
 }
 
 export function castFromAlmanac(target) {
@@ -3081,6 +3168,7 @@ if (typeof window !== 'undefined') {
       toggleAudit,
       selectDualChart,
       showShenShaSource,
+      showRelationSource,
       closeShenShaPop,
       handleShenShaPopKeydown,
       disputeShenSha,
@@ -3109,6 +3197,7 @@ if (typeof window !== 'undefined') {
       syncSolar,
       syncDst,
       syncSect,
+      syncSelfPunish,
       castFromAlmanac,
       syncAlmanacFromChart,
       openAlmanacFromChart,

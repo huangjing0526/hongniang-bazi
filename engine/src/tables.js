@@ -18,6 +18,14 @@ export const HIDE_GAN = {
   申:['庚','壬','戊'], 酉:['辛'], 戌:['戊','辛','丁'], 亥:['壬','甲'],
 };
 
+/** 六合六对与合化五行；六冲六对。地支关系表与神煞表共用，别各自再抄一份。 */
+export const LIU_HE_PAIRS = [['子','丑','土'], ['寅','亥','木'], ['卯','戌','火'], ['辰','酉','金'], ['巳','申','水'], ['午','未','土']];
+export const LIU_CHONG_PAIRS = [['子','午'], ['丑','未'], ['寅','申'], ['卯','酉'], ['辰','戌'], ['巳','亥']];
+const symmetric = (pairs) => Object.fromEntries(pairs.flatMap(([a, b]) => [[a, b], [b, a]]));
+/** 某支的六合对象 / 六冲对象，两个方向都查得到。 */
+export const LIU_HE = symmetric(LIU_HE_PAIRS);
+export const LIU_CHONG = symmetric(LIU_CHONG_PAIRS);
+
 /** 十二长生 order. */
 export const CHANG_SHENG = ['长生','沐浴','冠带','临官','帝旺','衰','病','死','墓','绝','胎','养'];
 /** Branch where each stem begins 长生. 阳干顺行，阴干逆行。 */

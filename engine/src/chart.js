@@ -5,6 +5,7 @@ import { HIDE_GAN, shiShen, changSheng } from './tables.js';
 import { assertChart } from './contract.js';
 import { applyShenSha } from './shensha.js';
 import { buildRisks } from './risk.js';
+import { branchRelations } from './branch-relations.js';
 
 // Frozen convention (§3.1 / §6): 年柱与月柱按**标准北京时间**交节；只有日柱与时柱
 // 走真太阳时。这是寿星万年历常用方案，业内不统一，所以写死在这里并可审计。
@@ -60,13 +61,14 @@ function decorate(pillar, dayGan) {
  * @param {'first'|'second'|'unknown'} [input.timeFold='unknown']
  * @param {'male'|'female'} [input.gender='male']
  * @param {boolean} [input.cityKnown=true]  出生地是否已落实；false 时经度是兜底的 120
+ * @param {boolean} [input.selfPunish=true]  地支自刑是否启用（老师模型默认开，部分流派不认）
  * @returns {{charts:object[], warnings:string[]}}  more than one chart iff the
  *          recorded time falls in the DST end-day repeated hour with unknown fold
  */
 export function computeChart(input) {
   const {
     longitude = 120, applyDst = true, applyTrueSolar = true,
-    sect = 1, timeFold = 'unknown', gender = 'male', cityKnown = true,
+    sect = 1, timeFold = 'unknown', gender = 'male', cityKnown = true, selfPunish = true,
   } = input;
   const clock = {
     year: input.year, month: input.month, day: input.day,
@@ -87,12 +89,12 @@ export function computeChart(input) {
   }
 
   const charts = folds.map((fold) =>
-    buildOne({ clock, longitude, applyDst, applyTrueSolar, sect, timeFold: fold, gender, cityKnown }),
+    buildOne({ clock, longitude, applyDst, applyTrueSolar, sect, timeFold: fold, gender, cityKnown, selfPunish }),
   );
   return { charts, warnings };
 }
 
-function buildOne({ clock, longitude, applyDst, applyTrueSolar, sect, timeFold, gender, cityKnown }) {
+function buildOne({ clock, longitude, applyDst, applyTrueSolar, sect, timeFold, gender, cityKnown, selfPunish }) {
   const audit = [];
   audit.push({ step: '钟表时', value: fmt(clock), note: '出生记录上的时间，原样输入' });
 
@@ -150,13 +152,15 @@ function buildOne({ clock, longitude, applyDst, applyTrueSolar, sect, timeFold, 
 
   applyShenSha(pillars);
   const risks = buildRisks({ clock, beijing, trueSolar, solarOffset, cityKnown });
+  const relations = branchRelations(pillars, { selfPunish });
   return assertChart({
-    input: { ...clock, longitude, applyDst, applyTrueSolar, sect, timeFold, gender, cityKnown },
+    input: { ...clock, longitude, applyDst, applyTrueSolar, sect, timeFold, gender, cityKnown, selfPunish },
     times: { clock, beijing, trueSolar },
     lunar: beijingChart.lunar.toString(),
     ganZhi: PILLAR_KEYS.map((k) => pillars[k].ganZhi).join(' '),
     pillars,
     audit,
     risks,
+    relations,
   });
 }

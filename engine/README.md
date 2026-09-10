@@ -25,6 +25,7 @@ npm test         # 11 条回归
 | `src/dst.js` | 1986–1991 夏令时表 + 四类边界分类 |
 | `src/solartime.js` | 均时差（NOAA/Meeus）+ 经度差 + 儒略日 |
 | `src/tables.js` | 十神 / 藏干 / 十二长生（自研，不取自 GPL 实现） |
+| `src/branch-relations.js` | 地支关系标注（合冲刑害破 / 三合三会半合暗拱 / 伏吟自刑 / 墓库 / 争合），据老师《地支运算体系 V3.1》，只标有无不判生效 |
 | `src/chart.js` | 编排 + 细盘十行 + 审计 JSON |
 | `src/cli.js` | 黄金用例 |
 

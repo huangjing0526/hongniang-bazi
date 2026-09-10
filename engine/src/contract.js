@@ -15,6 +15,10 @@ export const DETAIL_ROWS = /** @type {const} */ ([
   'zhuXing', 'gan', 'zhi', 'cangGan', 'fuXing', 'xingYun', 'ziZuo', 'xunKong', 'naYin', 'shenSha',
 ]);
 
+/** 柱位的地支叫法与宫位名（老师文档第二章）。地支关系区与弹层用，别在 web 里另抄一份。 */
+export const PILLAR_BRANCH_LABEL = { year: '年支', month: '月支', day: '日支', time: '时支' };
+export const PILLAR_PALACE = { year: '祖上宫', month: '月令', day: '夫妻宫', time: '子女宫' };
+
 export const ROW_LABELS = {
   zhuXing: '主星', gan: '天干', zhi: '地支', cangGan: '藏干', fuXing: '副星',
   xingYun: '星运', ziZuo: '自坐', xunKong: '空亡', naYin: '纳音', shenSha: '神煞',
@@ -68,6 +72,26 @@ export const RISK_LEVEL = /** @type {const} */ ({ INFO: 'info', WARN: 'warn' });
  */
 
 /**
+ * 地支关系（原局静态层）。只说「有没有、在哪几柱、隔多远、金字塔第几」，不判生效与吉凶。
+ * 生效判定（合解冲 / 冲破合 / 化气 / 封印）与岁运引动另起字段，落地前不要往这里塞。
+ * @typedef {object} Relation
+ * @property {string} kind      六合 / 六冲 / 三合 / 三会 / 生旺半合 / 旺墓半合 / 暗拱 / 暗合 / 争合 / 相刑 / 三刑 / 自刑 / 六害 / 六破 / 伏吟 / 墓库
+ * @property {string} label     给老师看的名目，含结果，如「六合（合土）」「恃势之刑」「暗拱（拱午）」「金库」；web 直接显示，不要再按 kind 拼
+ * @property {string} code      老师文档代号，如 K03、V01、G00
+ * @property {string} stars     文档星级原样
+ * @property {'bond'|'clash'|'neutral'} nature  合类 / 冲刑害破 / 其余，前端据此定色调
+ * @property {'pair'|'triple'|'tag'} category   由 positions 长度决定
+ * @property {string[]} positions  PILLAR_KEYS 子集，按柱序；柱名与宫位名用 PILLAR_BRANCH_LABEL / PILLAR_PALACE 查
+ * @property {string[]} branches   与 positions 等长，对应地支
+ * @property {{label:string,code?:string,event?:number,life?:number,note?:string}} [distance]
+ *           两支：第三章距离档，带断事 / 断局两套百分比；三合三会三刑：只有 label（三支相连 / 三支有隔）；争合、墓库无
+ * @property {string} layer        时序层级，本期恒为 'T00'（原局），为岁运层预留
+ * @property {string} source       规则原文与章节，点击时展示
+ * @property {boolean} pendingTeacherConfirm  老师文档中非共识口径，待确认
+ * @property {string} [note]
+ */
+
+/**
  * @typedef {object} AuditStep
  * @property {string} step   如「经度差」
  * @property {string} value  如「(103.82 − 120) × 4 = -64.7 分钟」
@@ -84,6 +108,7 @@ export const RISK_LEVEL = /** @type {const} */ ({ INFO: 'info', WARN: 'warn' });
  * @property {Record<string, Pillar>} pillars   键为 PILLAR_KEYS
  * @property {AuditStep[]} audit
  * @property {Risk[]} risks
+ * @property {Relation[]} relations   地支关系标注，见 Relation
  */
 
 /**
@@ -154,5 +179,6 @@ export function assertChart(chart) {
   }
   if (!Array.isArray(chart.risks)) throw new Error('chart.risks 必须是数组');
   if (!Array.isArray(chart.audit)) throw new Error('chart.audit 必须是数组');
+  if (!Array.isArray(chart.relations)) throw new Error('chart.relations 必须是数组（未实现时给空数组）');
   return chart;
 }

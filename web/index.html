@@ -1365,6 +1365,27 @@ body::before {
   border-top: 1px solid var(--line-soft);
 }
 
+/* 细盘下方「地支关系」区（老师《地支运算体系》A 标注层） */
+.relations-block { border-top: 1px solid var(--line-soft); }
+.relations-head {
+  padding: 10px 16px 4px;
+  font-family: var(--font-serif);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.relations-head span { margin-left: 8px; font-family: inherit; font-size: 0.6875rem; font-weight: 400; color: var(--ink-5); }
+.relations-group { display: flex; align-items: flex-start; gap: 8px; padding: 4px 16px; }
+.relations-group-label { flex: 0 0 4.5em; padding-top: 3px; font-size: 0.6875rem; color: var(--ink-5); }
+.relations-list { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.relations-list .relation-chip b { font-family: var(--font-serif); font-size: 0.8125rem; margin-right: 2px; }
+.relations-list .relation-chip small { color: var(--ink-5); font-weight: 400; margin-left: 3px; }
+.relations-list .relation-chip.clash { color: var(--cinnabar); border-color: rgba(199, 62, 50, 0.3); background: var(--cinnabar-soft); }
+.relations-list .relation-chip.neutral { color: var(--ink-3); border-color: var(--line); background: var(--paper-2); }
+.relations-empty { padding: 6px 16px 8px; font-size: 0.75rem; color: var(--ink-5); }
+.relation-pop-rows { margin: 8px 0 10px; font-size: 0.8125rem; line-height: 1.7; color: var(--ink-2); }
+.relation-pop-rows strong { display: inline-block; min-width: 3em; color: var(--ink-5); font-weight: 500; }
+
 /* 快速录入卡片与表单 */
 .quick-input-section {
   padding: 16px;
@@ -2713,6 +2734,8 @@ Alanzhou 199608101203 兰州 坤造 出生证
     <span class="toolbar-sep"></span>
     <label><input type="radio" name="toolbar-sect" value="1" checked onchange="window.app.syncSect(1)"> 子初换日</label>
     <label><input type="radio" name="toolbar-sect" value="2" onchange="window.app.syncSect(2)"> 早晚子时</label>
+    <span class="toolbar-sep"></span>
+    <label title="地支自刑：辰午酉亥重见才算。老师模型默认开，部分流派不认；只影响下方「地支关系」区，不改四柱"><input type="checkbox" id="toolbar-selfpunish" checked onchange="window.app.syncSelfPunish(this.checked)"> 自刑</label>
     <span id="toolbar-status-text">未交界</span>
     <button id="audit-toggle-btn" style="white-space:nowrap" onclick="window.app.toggleAudit()">朱批过程 ▾</button>
     <button style="white-space:nowrap" onclick="window.app.openAlmanacFromChart()">对照万年历 →</button>
