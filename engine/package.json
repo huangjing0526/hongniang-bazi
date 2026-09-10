@@ -1,9 +1,9 @@
 {
   "name": "hongniang-bazi-engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "红娘八字排盘 · 历法引擎（夏令时 / 真太阳时 / 子时两派 + 审计）",
+  "description": "红娘八字排盘 · 历法引擎（夏令时 / 真太阳时 / 子时两派 + 神煞 + 地支关系 + 干支流通 + 大运流年 + 司令）",
   "scripts": {
     "golden": "node src/cli.js",
     "test": "node --test test/*.test.js"

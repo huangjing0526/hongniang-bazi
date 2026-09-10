@@ -26,6 +26,10 @@ npm test         # 11 条回归
 | `src/solartime.js` | 均时差（NOAA/Meeus）+ 经度差 + 儒略日 |
 | `src/tables.js` | 十神 / 藏干 / 十二长生（自研，不取自 GPL 实现） |
 | `src/branch-relations.js` | 地支关系标注（合冲刑害破 / 三合三会半合暗拱 / 伏吟自刑 / 墓库 / 争合），据老师《地支运算体系 V3.1》，只标有无不判生效 |
+| `src/flow.js` | 相邻干支的生 / 同 / 克（三处）与天干五合 / 相冲，给细盘格上的灰线供数 |
+| `src/pillar-relations.js` | 整柱关系：盖头 / 截脚 / 天合地合 / 天克地冲（反吟）/ 干支伏吟，通行定义 |
+| `src/siling.js` | 人元司令分野冻结表（《三命通会》），标待老师确认 |
+| `src/luck.js` | 大运流年（REQ-005）：起运、交运、十步大运、流年、小运；起运折算口径可切 |
 | `src/chart.js` | 编排 + 细盘十行 + 审计 JSON |
 | `src/cli.js` | 黄金用例 |
 

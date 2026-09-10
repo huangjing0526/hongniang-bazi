@@ -2331,16 +2331,9 @@ export function showRelationSource(index) {
   const r = chart?.relations?.[index];
   if (!r) return;
   const where = r.positions.map((k, i) => `${PILLAR_BRANCH_LABEL[k]}（${PILLAR_PALACE[k]}）${r.branches[i]}`).join('、');
-  const rows = [
-    ['代号', `${r.code} · ${r.stars}`],
-    ['位置', where],
-  ];
-  if (r.distance) {
-    const d = r.distance;
-    // 两支带两套百分比；三支只有相连 / 有隔
-    const detail = d.code ? `（${d.code}）· 断具体事件按 ${d.event}%，断人生大局按 ${d.life}%${d.note ? '。' + d.note : ''}` : '';
-    rows.push(['距离', `${d.label}${detail}`]);
-  }
+  // 一期决策 D-13：只标关系名，不显示力量层级——代号、星级、距离百分比都不上屏（数据仍在）
+  const rows = [['位置', where]];
+  if (r.distance) rows.push(['距离', r.distance.label]);
   if (r.note) rows.push(['备注', r.note]);
   openShenShaPop(`
     <div class="shensha-pop-title">${escapeHtml(r.branches.join(''))} ${escapeHtml(r.label)}${r.pendingTeacherConfirm ? ' <span class="shensha-pop-pending">口径待老师确认</span>' : ''}</div>

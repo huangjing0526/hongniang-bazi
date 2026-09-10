@@ -92,6 +92,66 @@ export const RISK_LEVEL = /** @type {const} */ ({ INFO: 'info', WARN: 'warn' });
  */
 
 /**
+ * 干支生克流通（PRD-branch-relations v1.1 F-14）。只有三处：同柱干支、相邻柱天干、相邻柱地支。
+ * 方向已归一化：生 / 克 都是 from 作用于 to；同 无方向。前端画生与同，克只列文字（BR-14）。
+ * @typedef {object} Flow
+ * @property {{pillar:string, slot:'gan'|'zhi', char:string}} from
+ * @property {{pillar:string, slot:'gan'|'zhi', char:string}} to
+ * @property {'生'|'同'|'克'} type
+ * @property {string} label   如「庚生壬」「丑戌同气」「己克癸」
+ */
+
+/**
+ * 天干关系（F-15）。五合标所合五行不判化；相冲本期只出数据不画。不论隔几柱都列。
+ * @typedef {object} StemRelation
+ * @property {'五合'|'相冲'} kind
+ * @property {string} label       如「丁壬合木」「丁癸相冲」
+ * @property {string} [element]   仅五合：所合五行
+ * @property {string[]} positions PILLAR_KEYS 子集，按柱序
+ * @property {string[]} stems     与 positions 等长
+ */
+
+/**
+ * 整柱关系（一期决策 D-13，通行定义）：盖头 / 截脚（单柱）、天合地合 / 天克地冲（反吟）/ 干支伏吟（两柱）。
+ * @typedef {object} PillarRelation
+ * @property {string} kind
+ * @property {string} label      如「庚寅 盖头」「甲子 庚午 天克地冲（反吟）」
+ * @property {string[]} positions
+ * @property {string} source
+ */
+
+/**
+ * 人元司令（D-12）。冻结《三命通会》分野表，同神煞标「待老师确认」。
+ * @typedef {object} SiLing
+ * @property {string} gan            当令藏干
+ * @property {number} daysAfterJie   出生距本月节几天（0 起）
+ * @property {string} monthZhi
+ * @property {string} source
+ * @property {boolean} pendingTeacherConfirm
+ */
+
+/**
+ * 大运流年（REQ-005）。只排不判。
+ * @typedef {object} LuckPeriod
+ * @property {number} index      0 = 起运前（小运期），1..10 = 十步大运
+ * @property {string} ganZhi     index 0 为空串
+ * @property {string} gan
+ * @property {string} zhi
+ * @property {number} startYear @property {number} endYear
+ * @property {number} startAge  @property {number} endAge   虚岁
+ * @property {string} [zhuXing] @property {string[]} [cangGan] @property {string[]} [fuXing] @property {string} [xingYun]  与 Pillar 同义，均对日干
+ * @property {{year:number, age:number, ganZhi:string, gan:string, zhi:string, zhuXing:string, cangGan:string[], fuXing:string[], xingYun:string}[]} liuNian
+ * @property {{year:number, age:number, ganZhi:string}[]} xiaoYun   仅 index 0；从时柱起男顺女逆（D-12），固定显示，界面注「表不同」
+ *
+ * @typedef {object} Luck
+ * @property {boolean} forward   顺行（阳男阴女）
+ * @property {1|2} luckSect      起运折算口径：1 整时辰 / 2 按分钟折算显示到时（默认，一期决策 D-12），见 luck.js
+ * @property {{years:number, months:number, days:number, hours:number}} start   起运时长
+ * @property {{year:number, month:number, day:number, hour:number, minute:number}} startAt   交运时刻（北京时）
+ * @property {LuckPeriod[]} daYun   长度 10，第 0 项为起运前
+ */
+
+/**
  * @typedef {object} AuditStep
  * @property {string} step   如「经度差」
  * @property {string} value  如「(103.82 − 120) × 4 = -64.7 分钟」
@@ -109,6 +169,12 @@ export const RISK_LEVEL = /** @type {const} */ ({ INFO: 'info', WARN: 'warn' });
  * @property {AuditStep[]} audit
  * @property {Risk[]} risks
  * @property {Relation[]} relations   地支关系标注，见 Relation
+ * @property {Flow[]} flows           干支生克流通（相邻三处），见 Flow
+ * @property {Flow[]} dayMasterFlows  年月时天干各自对日主的生 / 同 / 克，不论距离；F-16 文字行取其中的克
+ * @property {StemRelation[]} stemRelations   天干五合 / 相冲，见 StemRelation
+ * @property {PillarRelation[]} pillarRelations   整柱关系，见 PillarRelation
+ * @property {SiLing} siLing          人元司令，见 SiLing
+ * @property {Luck} luck              大运流年，见 Luck
  */
 
 /**
@@ -180,5 +246,11 @@ export function assertChart(chart) {
   if (!Array.isArray(chart.risks)) throw new Error('chart.risks 必须是数组');
   if (!Array.isArray(chart.audit)) throw new Error('chart.audit 必须是数组');
   if (!Array.isArray(chart.relations)) throw new Error('chart.relations 必须是数组（未实现时给空数组）');
+  if (!Array.isArray(chart.flows)) throw new Error('chart.flows 必须是数组');
+  if (!Array.isArray(chart.dayMasterFlows)) throw new Error('chart.dayMasterFlows 必须是数组');
+  if (!Array.isArray(chart.stemRelations)) throw new Error('chart.stemRelations 必须是数组');
+  if (!Array.isArray(chart.pillarRelations)) throw new Error('chart.pillarRelations 必须是数组');
+  if (typeof chart.siLing?.gan !== 'string') throw new Error('chart.siLing.gan 缺失');
+  if (!Array.isArray(chart.luck?.daYun) || chart.luck.daYun.length !== 10) throw new Error('chart.luck.daYun 必须是 10 项');
   return chart;
 }

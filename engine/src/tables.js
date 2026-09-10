@@ -10,6 +10,20 @@ export const GAN_ELEMENT = { 甲:0, 乙:0, 丙:1, 丁:1, 戊:2, 己:2, 庚:3, �
 export const GAN_YANG = { 甲:true, 乙:false, 丙:true, 丁:false, 戊:true, 己:false, 庚:true, 辛:false, 壬:true, 癸:false };
 
 export const ELEMENT_NAME = ['木','火','土','金','水'];
+export const ZHI_ELEMENT = { 子:4, 丑:2, 寅:0, 卯:0, 辰:2, 巳:1, 午:1, 未:2, 申:3, 酉:3, 戌:2, 亥:4 };
+
+/** 天干五合（含所合五行）与天干相冲。只是查表事实；化不化、冲得动与否属判定层。 */
+export const GAN_HE_PAIRS = [['甲','己','土'], ['乙','庚','金'], ['丙','辛','水'], ['丁','壬','木'], ['戊','癸','火']];
+export const GAN_CHONG_PAIRS = [['甲','庚'], ['乙','辛'], ['丙','壬'], ['丁','癸']];
+
+/**
+ * 两个五行之间的关系，以 a 为主语：同 / 生（a 生 b）/ 被生（b 生 a）/ 克（a 克 b）/ 被克（b 克 a）。
+ * 元素序 木火土金水 是相生序，相邻即生，隔一即克。
+ */
+export function elementRelation(a, b) {
+  const d = (b - a + 5) % 5;
+  return ['同', '生', '克', '被克', '被生'][d];
+}
 
 /** Hidden stems of each branch, 本气 first then 余气/杂气. */
 export const HIDE_GAN = {

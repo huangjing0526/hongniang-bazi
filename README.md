@@ -1,6 +1,17 @@
 # 红娘八字排盘
 
-给红娘机构用的四柱排盘工具。当前：**B 档 MVP 可跑，等老师试用**。
+给红娘机构用的四柱排盘工具。当前：**B 档 MVP（试用版）可跑，老师试用中；一期在同仓库另起目录开发。**
+
+## 目录分工（2026-09-11 决策 D-0，见 `docs/plans/DECISIONS-wenzhen-bazi-phase-one.md`）
+
+| 目录 | 归属 | 状态 |
+|---|---|---|
+| `engine/` | **共享**。历法、神煞、地支关系、干支流通、大运流年、司令 | 活跃；改契约走独立 worktree + 定向提交。标签 `trial-freeze` = 试用版基线（一期 PRD D-3） |
+| `web/`、`cloud/`、`deploy/`、`data/` | **试用版**（老师在用的） | 冻结到一期上线后一个月，只修 bug（D-10） |
+| `app/` | **一期前端**（账号、命例、基本排盘、命盘详解、研判记录） | 起步，见 `app/README.md` |
+| `server/` | **一期服务**（邮箱验证码账号、命例归属、研判记录、试用版 JSON 导入） | 起步，见 `server/README.md` |
+| `prototype/` | 设计稿（Antigravity） | 试用版与一期共用视觉体系 |
+| `docs/plans/` | 一期 PRD、两份子 PRD、决策表 | 决策表只由 Claude 维护、Jing 裁定 |
 
 ```bash
 node web/server.js   # → http://localhost:5173
