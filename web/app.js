@@ -3,6 +3,7 @@
 // 中文注释，英文变量名/函数名 (Strict adherence to task guidelines)
 
 import { computeChart } from '../engine/src/chart.js';
+import { almanacPillars } from '../engine/src/calendar.js';
 import { fmt } from '../engine/src/solartime.js';
 import { mount as mountDateTimePicker } from './components/datetime-picker.js';
 import { mount as mountRegionPicker } from './components/region-picker.js';
@@ -1161,19 +1162,64 @@ function renderRisks() {
       ? '出生地缺失'
       : (r.level === RISK_LEVEL.WARN ? '重点分歧' : '需留心');
     const message = r.kind === RISK_KIND.JIE_QI_DAY ? r.message + jieQiDaySectNote() : r.message;
-    const almanacLink = ALMANAC_RISK_KINDS.has(r.kind)
-      ? ' <a class="risk-almanac-link" href="javascript:void 0" onclick="window.app.openAlmanacFromChart()">查看万年历 →</a>'
-      : '';
     html += `
       <li class="risk-item ${levelClass}">
         <span class="risk-badge">${badge}</span>
         <span class="risk-affects">[${affectsText}]</span>
-        <span class="risk-message">${escapeHtml(message)}${almanacLink}</span>
+        <span class="risk-message">${escapeHtml(message)}</span>
       </li>
     `;
   }
   html += `</ul>`;
+  // 历法类风险原来只给一个「查看万年历 →」的跳转，可老师此刻要的就是一句
+  // 「有没有出入」。跳过去等于拿盘面、风险条、裁定表单三样换四个格子，
+  // 所以把结论直接算在这里，跳转只留给真要翻月历的人。
+  if (risks.some((r) => ALMANAC_RISK_KINDS.has(r.kind))) {
+    html += renderAlmanacCrossCheck(chart);
+  }
   riskBoxEl.innerHTML = html;
+}
+
+/**
+ * 风险条末尾的万年历对照结论。
+ * 一致时只占一行；有出入才摊开四柱，因为那才是需要老师动脑的情况。
+ */
+function renderAlmanacCrossCheck(chart) {
+  let ours;
+  try {
+    ours = almanacPillars({
+      beijing: chart.times.beijing,
+      trueSolar: chart.times.trueSolar,
+      sect: state.input.sect,
+    });
+  } catch (err) {
+    // 对照失败不该把整条风险条带塌，但也不能装作核过了
+    console.error('万年历对照计算失败:', { caseId: activeCaseId(), err });
+    return `<div class="risk-almanac-check">万年历对照：<strong>暂时算不出</strong>
+      <a class="risk-almanac-link" href="javascript:void 0"
+         onclick="window.app.openAlmanacFromChart()">完整万年历 →</a></div>`;
+  }
+
+  const diff = PILLAR_KEYS.filter((key) => chart.pillars[key].ganZhi !== ours[key]);
+  const link = `<a class="risk-almanac-link" href="javascript:void 0"
+      onclick="window.app.openAlmanacFromChart()">完整万年历 →</a>`;
+
+  if (diff.length === 0) {
+    return `<div class="risk-almanac-check">万年历对照：<strong>四柱一致</strong> ✓ ${link}</div>`;
+  }
+
+  const cells = diff.map((key) => `
+    <div class="risk-almanac-cell">
+      <div class="risk-almanac-pillar">${PILLAR_NAMES[key]}</div>
+      <div class="risk-almanac-values">${escapeHtml(chart.pillars[key].ganZhi)}
+        <span class="risk-almanac-sep">/</span> ${escapeHtml(ours[key])}</div>
+    </div>`).join('');
+
+  return `<div class="risk-almanac-check risk-almanac-differs">
+    <div>万年历对照：<strong>${diff.map((k) => PILLAR_NAMES[k]).join('、')}不一致</strong>
+      （本盘 / 万年历推法） ${link}</div>
+    <div class="risk-almanac-grid">${cells}</div>
+  </div>`;
 }
 
 /** 节气日那条提醒的后半句：说清本盘的子时流派是怎么定下来的 */
@@ -2075,6 +2121,60 @@ function getActiveChart() {
   return state.currentResult.charts[state.activeChartIndex] || state.currentResult.charts[0];
 }
 
+/**
+ * 吸顶的裁定框要让开顶栏，让多少是量出来的，不是猜的。
+ * 原来写死 128px：默认字号下顶栏就已经 131px，裁定框被压掉 3px；字号调到
+ * 150% 顶栏涨到 164px，压掉 36px——正是「能放大」之后才暴露的账。
+ */
+function initStickyTop() {
+  const header = document.querySelector('.main-header');
+  if (!header) return;
+  const apply = () => {
+    const h = Math.round(header.getBoundingClientRect().height);
+    if (h > 0) document.documentElement.style.setProperty('--sticky-top', `${h}px`);
+  };
+  apply();
+  // 字号、窗宽、同步状态那行的字数都会改变顶栏高度，交给 ResizeObserver 一并兜住
+  if (typeof ResizeObserver === 'function') new ResizeObserver(apply).observe(header);
+  else window.addEventListener('resize', apply);
+}
+
+/**
+ * tab 条的键盘操作。role="tablist" 许诺的是「Tab 键进来一次，左右键在标签间走」，
+ * 原来只有 role 没有行为，读屏用户按左右键没反应，只能一路 Tab 穿过五个标签。
+ */
+function initTabKeyboard() {
+  const list = document.querySelector('.tabs[role="tablist"]');
+  if (!list) return;
+  const tabs = () => [...list.querySelectorAll('[role="tab"]')];
+
+  syncTabRovingIndex();
+
+  list.addEventListener('keydown', (e) => {
+    const all = tabs();
+    const i = all.indexOf(document.activeElement);
+    if (i < 0) return;
+    const to = {
+      ArrowRight: (i + 1) % all.length,
+      ArrowLeft: (i - 1 + all.length) % all.length,
+      Home: 0,
+      End: all.length - 1,
+    }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    // 焦点跟着走就直接切页：这个 tab 条本来就是点一下即切，键盘不该多一次确认
+    all[to].focus();
+    all[to].click();
+  });
+}
+
+/** 只让当前标签留在 Tab 序列里，其余交给左右键——roving tabindex，ARIA 对 tablist 的要求 */
+function syncTabRovingIndex() {
+  document.querySelectorAll('.tabs[role="tablist"] [role="tab"]').forEach((t) => {
+    t.setAttribute('tabindex', t.classList.contains('active') ? '0' : '-1');
+  });
+}
+
 /** 切换 Tab */
 export function switchTab(tabId) {
   document.querySelectorAll('.tab').forEach((tab) => {
@@ -2091,6 +2191,7 @@ export function switchTab(tabId) {
 
   const pane = document.getElementById(`tab-${tabId}`);
   if (pane) pane.classList.add('active');
+  syncTabRovingIndex();
 
   // 回到顶部。不然从盘底部切到「快速录入」，那一页顶上的
   // 「单个录入 / 批量录入」切换正好被吸顶的 tab 栏挡住，老师看不见它。
@@ -3020,6 +3121,8 @@ if (typeof window !== 'undefined') {
     };
 
     initTeacherToken();
+    initTabKeyboard();
+    initStickyTop();
     loadPersistedData();
     loadSwitches();
     // 把上次留存的批量命例先渲染出来，否则追加解析时列表看着是空的

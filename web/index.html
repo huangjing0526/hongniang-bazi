@@ -419,7 +419,40 @@ body::before {
   font-weight: 600;
   text-decoration: none;
   border-bottom: 1px solid currentColor;
+  white-space: nowrap;
 }
+
+/* 万年历对照结论：核盘要的那句话，就放在风险条末尾 */
+.risk-almanac-check {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+.risk-almanac-check strong { color: var(--wood); }
+.risk-almanac-differs strong { color: var(--cinnabar); }
+.risk-almanac-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.risk-almanac-cell {
+  padding: 5px 10px;
+  border: 1px solid var(--cinnabar);
+  border-radius: var(--radius-sm);
+  background: var(--cinnabar-soft);
+}
+.risk-almanac-pillar { font-size: 0.6875rem; color: var(--ink-5); }
+.risk-almanac-values {
+  font-family: var(--font-serif);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.risk-almanac-sep { color: var(--ink-5); font-weight: 400; }
 
 /* 夏令时双盘提醒 */
 .dual-chart-alert {
@@ -2556,7 +2589,7 @@ body.engine-loading #engine-loading { display: flex; }
 <!-- ===================================================================== -->
 <!-- TAB 1: 快速录入（最高优先级） -->
 <!-- ===================================================================== -->
-<div id="tab-quick" class="tab-pane">
+<div id="tab-quick" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-quick" tabindex="0">
   <div class="quick-input-section">
     <!-- 录入方式切换：单个录入 / 批量录入 -->
     <div class="mode-switch">
@@ -2644,7 +2677,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
 <!-- ===================================================================== -->
 <!-- TAB 2: 基本排盘（核心细盘表格与当场裁定） -->
 <!-- ===================================================================== -->
-<div id="tab-chart" class="tab-pane active">
+<div id="tab-chart" class="tab-pane active" role="tabpanel" aria-labelledby="tab-btn-chart" tabindex="0">
   <!-- 盘这一栏。宽屏下它在左，裁定卡片在右侧吸顶跟随；窄屏下仍是上下叠着 -->
   <div class="chart-main">
   <!-- 命主基本信息条 -->
@@ -2798,7 +2831,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
 <!-- ===================================================================== -->
 <!-- TAB 3: 口径对照（对照页与分歧高亮） -->
 <!-- ===================================================================== -->
-<div id="tab-compare" class="tab-pane">
+<div id="tab-compare" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-compare" tabindex="0">
   <div class="compare-pane-box">
     <div class="card-title">同一个盘 · 两套排法并排</div>
     <!-- 命主条、说明与各条口径的区块全由 renderCompare 填 -->
@@ -2811,7 +2844,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
 <!-- ===================================================================== -->
 <!-- TAB 4: 老师裁定历史管理 -->
 <!-- ===================================================================== -->
-<div id="tab-verdicts" class="tab-pane">
+<div id="tab-verdicts" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-verdicts" tabindex="0">
   <div class="verdicts-container">
     <div class="card-title">老师历史裁定卷宗</div>
     <div class="card-sub">
@@ -2828,7 +2861,7 @@ Alanzhou 199608101203 兰州 坤造 出生证
 <!-- ===================================================================== -->
 <!-- TAB 5: 万年历核盘页 -->
 <!-- ===================================================================== -->
-<div id="tab-almanac" class="tab-pane">
+<div id="tab-almanac" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-almanac" tabindex="0">
   <div class="alm-page">
     <div class="card-box alm-controls">
       <div class="card-title">万年历核盘</div>
@@ -2923,7 +2956,8 @@ Alanzhou 199608101203 兰州 坤造 出生证
 </div>
 
 <!-- 浮层 Toast -->
-<div id="toast" class="toast"></div>
+<!-- polite 而非 assertive：toast 是「已保存」这类回执，不该打断老师正在念的那句 -->
+<div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <!-- 主业务逻辑 ESM 入口 -->
 <script type="module" src="/app.js"></script>
