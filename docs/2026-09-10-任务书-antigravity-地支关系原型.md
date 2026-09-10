@@ -1,3 +1,5 @@
+> **已作废（2026-09-11）**：决策 D-0 后试用版冻结，本任务书的内容并入 `docs/2026-09-11-任务书-antigravity-一期命盘原型.md`，请改看那份。
+
 # 任务书 · Antigravity · 「地支关系」区原型
 
 来源：`docs/plans/PRD-branch-relations.md`（v1.1，Jing 已于 2026-09-10 定稿，本任务书生效）。
